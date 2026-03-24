@@ -47,6 +47,23 @@ export async function createAnalysisRecord(
 }
 
 /**
+ * Persist a failure reason to the analysis record.
+ */
+export async function persistFailure(
+  analysisId: string,
+  errorMessage: string,
+): Promise<void> {
+  const prisma = getPrismaClient();
+  await prisma.analysis.update({
+    where: { id: analysisId },
+    data: {
+      status: 'FAILED',
+      reflectionNotes: `ERROR: ${errorMessage}`,
+    },
+  });
+}
+
+/**
  * Update analysis status.
  */
 export async function updateAnalysisStatus(

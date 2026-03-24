@@ -89,9 +89,12 @@ export default function NewAnalysis() {
       <div className="bg-white rounded-lg border p-6 space-y-6">
         {/* Claim Text Input */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Patent Claim Text
           </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Paste a single patent claim (e.g., Claim 1). Not the entire patent document.
+          </p>
           <textarea
             className="w-full h-48 px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
             placeholder="1. A camera system comprising:&#10;a first camera module having a first field of view;&#10;a second camera module having a second field of view..."

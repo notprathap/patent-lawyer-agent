@@ -236,9 +236,11 @@ export async function runStructuredAgentLoop<T>(
   });
 
   if (capturedOutput === null) {
+    // The agent responded with text instead of calling the tool.
+    // Include the agent's text response in the error so the caller can show it.
+    const agentMessage = result.text?.trim() || 'No explanation provided.';
     throw new Error(
-      `Agent did not call the "${outputToolName}" tool. ` +
-        'Ensure the system prompt instructs the agent to submit its result using this tool.',
+      `The agent could not process this input. Agent response: "${agentMessage.slice(0, 500)}"`,
     );
   }
 

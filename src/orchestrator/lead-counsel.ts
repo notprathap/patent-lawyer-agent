@@ -20,6 +20,7 @@ import {
   persistPriorArtReport,
   persistExaminerAnalysis,
   persistFinalResults,
+  persistFailure,
 } from '../db/repositories/analysis.repo.js';
 import type { Jurisdiction } from '../types/index.js';
 
@@ -256,7 +257,8 @@ export async function runAnalysis(
     const errorMessage = error instanceof Error ? error.message : String(error);
     session.issues.push(`Fatal error: ${errorMessage}`);
     if (persist && analysisId) {
-      await updateAnalysisStatus(analysisId, 'FAILED').catch(() => {});
+      // Store the error in reflectionNotes so the UI can show it
+      await persistFailure(analysisId, errorMessage).catch(() => {});
     }
     logger.error(
       { sessionId: session.id, error: errorMessage },

@@ -31,13 +31,14 @@ interface Analysis {
   ukRating: string | null;
   assessmentConfidence: string | null;
   memo: string | null;
+  reflectionNotes: string | null;
   totalInputTokens: number;
   totalOutputTokens: number;
   createdAt: string;
   completedAt: string | null;
 }
 
-function StatusTracker({ status }: { status: string }) {
+function StatusTracker({ status, errorMessage }: { status: string; errorMessage?: string | null }) {
   const currentIdx = STEPS.indexOf(status);
   const isFailed = status === 'FAILED';
 
@@ -73,8 +74,10 @@ function StatusTracker({ status }: { status: string }) {
         })}
       </div>
       {isFailed && (
-        <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded text-sm">
-          Analysis failed. Check the API logs for details.
+        <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+          <p className="font-medium">Analysis Failed</p>
+          {errorMessage && <p className="mt-1">{errorMessage.replace(/^ERROR:\s*/, '')}</p>}
+          {!errorMessage && <p className="mt-1">Check the API logs for details.</p>}
         </div>
       )}
     </div>
@@ -165,7 +168,7 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
         <h1 className="text-2xl font-bold">Analysis {analysis.id.slice(0, 12)}...</h1>
       </div>
 
-      <StatusTracker status={analysis.status} />
+      <StatusTracker status={analysis.status} errorMessage={analysis.reflectionNotes} />
 
       {isComplete && <ConfidencePanel analysis={analysis} />}
 
