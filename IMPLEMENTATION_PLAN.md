@@ -365,20 +365,18 @@ Services: app (API), worker (BullMQ), redis
 ## Sequencing + Milestones
 
 ```
-Phase 0  Scaffolding               ──┐
-Phase 1  Agent Loop + Claim          │  Milestone 1: First agent works
-Phase 2  Prior Art + Search Tools    │
-Phase 3  Patent Examiner             │
-Phase 4  Orchestrator + E2E        ──┘  Milestone 2: CLI pipeline works end-to-end
-Phase 5  Database + Persistence    ──┐  (can parallel with Phase 6)
-Phase 6  RAG Pipeline              ──┘
-Phase 7  Guardrails                ──── Milestone 3: Trustworthy output
-Phase 8  REST API                  ──── Milestone 4: Deployable API
-Phase 9  Production Hardening
-Phase 10 HITL + Polish             ──── Milestone 5: Production-ready
+Phase 0  Scaffolding               ✅ COMPLETE
+Phase 1  Agent Loop + Claim        ✅ COMPLETE  — Milestone 1: First agent works
+Phase 2  Prior Art + Search Tools  ✅ COMPLETE
+Phase 3  Patent Examiner           ✅ COMPLETE
+Phase 4  Orchestrator + E2E       ✅ COMPLETE  — Milestone 2: CLI pipeline works end-to-end
+Phase 5  Database + Persistence   ✅ COMPLETE
+Phase 6  RAG Pipeline             ✅ COMPLETE  (local embeddings, 309 chunks across US/EU/UK)
+Phase 7  Guardrails               ✅ COMPLETE  — Milestone 3: Trustworthy output
+Phase 8  REST API + Next.js UI    ✅ COMPLETE  — Milestone 4: Deployable API with web UI
+Phase 9  Production Hardening      ⏸ Deferred  (running locally for now)
+Phase 10 HITL + Polish             ⏸ Deferred  (future: feedback, PDF export)
 ```
-
-Phases 5 and 6 can run in parallel. All other phases are sequential.
 
 ---
 

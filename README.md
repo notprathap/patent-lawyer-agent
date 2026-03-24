@@ -100,11 +100,12 @@ npm run dev -- claim.txt --output memo.md
 **Option B: API + Web UI**
 
 ```bash
-# Terminal 1: Start the API server (port 3000)
-npm run api
+# Start both API and frontend in one command
+npm run dev:all
 
-# Terminal 2: Start the Next.js frontend (port 3001)
-cd web && npm run dev
+# Or separately:
+# Terminal 1: npm run api       (port 3000)
+# Terminal 2: npm run web       (port 3001)
 ```
 
 Open [http://localhost:3001](http://localhost:3001) to use the web UI.
@@ -200,7 +201,8 @@ tests/
 | `npm run db:migrate` | Run database migrations |
 | `npm run db:ingest` | Hydrate legal knowledge base |
 | `npm run db:studio` | Open Prisma Studio |
-| `cd web && npm run dev` | Start Next.js frontend |
+| `npm run web` | Start Next.js frontend (port 3001) |
+| `npm run dev:all` | Start API + frontend together |
 
 ## Guardrails
 
