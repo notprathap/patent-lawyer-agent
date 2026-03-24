@@ -99,6 +99,132 @@ export const PriorArtReportSchema = z.object({
 export type PriorArtReport = z.infer<typeof PriorArtReportSchema>;
 
 // ---------------------------------------------------------------------------
+// Invalidity Analysis — Strength Rating
+// ---------------------------------------------------------------------------
+export const ArgumentStrengthSchema = z.enum(['strong', 'moderate', 'weak']);
+export type ArgumentStrength = z.infer<typeof ArgumentStrengthSchema>;
+
+// ---------------------------------------------------------------------------
+// US Analysis (35 U.S.C. §§ 102, 103)
+// ---------------------------------------------------------------------------
+export const AnticipationArgumentSchema = z.object({
+  referenceId: z.string(),
+  referenceTitle: z.string(),
+  elementMappings: z.array(
+    z.object({
+      elementId: z.string(),
+      excerpt: z.string(),
+      explanation: z.string(),
+    }),
+  ),
+  strength: ArgumentStrengthSchema,
+});
+export type AnticipationArgument = z.infer<typeof AnticipationArgumentSchema>;
+
+export const GrahamFactorsSchema = z.object({
+  scopeAndContent: z.string(),
+  differenceFromPriorArt: z.string(),
+  levelOfOrdinarySkill: z.string(),
+  secondaryConsiderations: z.string().optional(),
+});
+export type GrahamFactors = z.infer<typeof GrahamFactorsSchema>;
+
+export const ObviousnessArgumentSchema = z.object({
+  referenceIds: z.array(z.string()),
+  referenceTitles: z.array(z.string()),
+  motivationToCombine: z.string(),
+  grahamFactors: GrahamFactorsSchema,
+  ksrRationale: z.string().optional(),
+  strength: ArgumentStrengthSchema,
+});
+export type ObviousnessArgument = z.infer<typeof ObviousnessArgumentSchema>;
+
+export const USAnalysisSchema = z.object({
+  anticipationArgs: z.array(AnticipationArgumentSchema),
+  obviousnessArgs: z.array(ObviousnessArgumentSchema),
+  strongestElements: z.array(z.string()),
+  weakestElements: z.array(z.string()),
+  overallStrength: ArgumentStrengthSchema,
+  summary: z.string(),
+});
+export type USAnalysis = z.infer<typeof USAnalysisSchema>;
+
+// ---------------------------------------------------------------------------
+// EPO Analysis (EPC Articles 54, 56 — Problem-Solution Approach)
+// ---------------------------------------------------------------------------
+export const ProblemSolutionApproachSchema = z.object({
+  closestPriorArt: z.object({
+    referenceId: z.string(),
+    referenceTitle: z.string(),
+    justification: z.string(),
+  }),
+  objectiveTechnicalProblem: z.string(),
+  couldWouldAnalysis: z.string(),
+  conclusion: z.string(),
+  strength: ArgumentStrengthSchema,
+});
+export type ProblemSolutionApproach = z.infer<typeof ProblemSolutionApproachSchema>;
+
+export const EPOAnalysisSchema = z.object({
+  noveltyArgs: z.array(
+    z.object({
+      referenceId: z.string(),
+      referenceTitle: z.string(),
+      explanation: z.string(),
+      strength: ArgumentStrengthSchema,
+    }),
+  ),
+  inventiveStepArgs: z.array(ProblemSolutionApproachSchema),
+  strongestElements: z.array(z.string()),
+  weakestElements: z.array(z.string()),
+  overallStrength: ArgumentStrengthSchema,
+  summary: z.string(),
+});
+export type EPOAnalysis = z.infer<typeof EPOAnalysisSchema>;
+
+// ---------------------------------------------------------------------------
+// UK Analysis (UK Patents Act 1977 — Windsurfing/Pozzoli Test)
+// ---------------------------------------------------------------------------
+export const PozzoliTestSchema = z.object({
+  skilledPersonAndCGK: z.string(),
+  inventiveConcept: z.string(),
+  differencesFromPriorArt: z.string(),
+  obviousnessAssessment: z.string(),
+  conclusion: z.string(),
+  strength: ArgumentStrengthSchema,
+});
+export type PozzoliTest = z.infer<typeof PozzoliTestSchema>;
+
+export const UKAnalysisSchema = z.object({
+  noveltyArgs: z.array(
+    z.object({
+      referenceId: z.string(),
+      referenceTitle: z.string(),
+      explanation: z.string(),
+      strength: ArgumentStrengthSchema,
+    }),
+  ),
+  inventiveStepArgs: z.array(PozzoliTestSchema),
+  strongestElements: z.array(z.string()),
+  weakestElements: z.array(z.string()),
+  overallStrength: ArgumentStrengthSchema,
+  summary: z.string(),
+});
+export type UKAnalysis = z.infer<typeof UKAnalysisSchema>;
+
+// ---------------------------------------------------------------------------
+// Multi-Jurisdiction Analysis (output of Patent Examiner)
+// ---------------------------------------------------------------------------
+export const MultiJurisdictionAnalysisSchema = z.object({
+  us: USAnalysisSchema.optional(),
+  epo: EPOAnalysisSchema.optional(),
+  uk: UKAnalysisSchema.optional(),
+  divergences: z.array(z.string()),
+  overallAssessment: z.string(),
+});
+export type MultiJurisdictionAnalysis = z.infer<typeof MultiJurisdictionAnalysisSchema>;
+
+// ---------------------------------------------------------------------------
 // Agent Result (generic wrapper for all agent outputs)
 // ---------------------------------------------------------------------------
 export interface AgentResult<T> {

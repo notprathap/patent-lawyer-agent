@@ -63,7 +63,7 @@ export async function investigatePriorArt(
       outputToolName: 'submit_prior_art_report',
       outputToolDescription:
         'Submit the complete prior art report with per-element coverage, references, and search metadata.',
-      maxTurns: 20, // More turns needed — agent makes multiple search calls
+      maxTurns: 30, // More turns needed — agent makes multiple search calls with retries
       maxTokens: 8192,
     },
   );
