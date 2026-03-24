@@ -230,14 +230,31 @@ export async function runStructuredAgentLoop<T>(
   // Prepend submit tool to any existing tools
   const allTools = [submitTool, ...(agentOptions.tools ?? [])];
 
-  const result = await runAgentLoop(userMessage, {
+  let result = await runAgentLoop(userMessage, {
     ...agentOptions,
     tools: allTools,
   });
 
+  // If the agent didn't call the submit tool, retry once with an explicit instruction
+  if (capturedOutput === null && result.text) {
+    logger.debug('Structured agent loop: agent did not call submit tool, retrying with nudge');
+
+    const retryMessage =
+      `You responded with text but did not call the "${outputToolName}" tool. ` +
+      `You MUST call "${outputToolName}" with your structured analysis. ` +
+      `Parse the input as best you can and submit it now. Do not respond with text.`;
+
+    result = await runAgentLoop(
+      `${userMessage}\n\n---\n\nPREVIOUS ATTEMPT:\n${result.text}\n\n---\n\nINSTRUCTION: ${retryMessage}`,
+      {
+        ...agentOptions,
+        tools: allTools,
+        maxTurns: 3,
+      },
+    );
+  }
+
   if (capturedOutput === null) {
-    // The agent responded with text instead of calling the tool.
-    // Include the agent's text response in the error so the caller can show it.
     const agentMessage = result.text?.trim() || 'No explanation provided.';
     throw new Error(
       `The agent could not process this input. Agent response: "${agentMessage.slice(0, 500)}"`,

@@ -93,7 +93,7 @@ export default function NewAnalysis() {
             Patent Claim Text
           </label>
           <p className="text-xs text-gray-500 mb-2">
-            Paste a single patent claim (e.g., Claim 1). Not the entire patent document.
+            Paste your patent claim text, including all points and sub-claims.
           </p>
           <textarea
             className="w-full h-48 px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
