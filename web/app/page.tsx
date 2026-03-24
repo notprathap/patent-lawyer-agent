@@ -46,11 +46,12 @@ function StatusBadge({ status }: { status: string }) {
 export default function Dashboard() {
   const [analyses, setAnalyses] = useState<AnalysisSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     listAnalyses()
       .then((res) => setAnalyses(res.data || []))
-      .catch(console.error)
+      .catch((err) => setError(err.message || 'Failed to load analyses'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -63,7 +64,13 @@ export default function Dashboard() {
         </a>
       </div>
 
-      {loading ? (
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <p className="font-medium">API Connection Error</p>
+          <p className="text-sm mt-1">{error}</p>
+          <p className="text-sm mt-2">Run <code className="bg-red-100 px-1 rounded">npm run api</code> to start the API server, or <code className="bg-red-100 px-1 rounded">npm run dev:all</code> to start both.</p>
+        </div>
+      ) : loading ? (
         <p className="text-gray-500">Loading analyses...</p>
       ) : analyses.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border">
