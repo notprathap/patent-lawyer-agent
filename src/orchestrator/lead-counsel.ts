@@ -47,19 +47,20 @@ export async function runAnalysis(
   claimText: string,
   jurisdictions: Jurisdiction[] = ['US', 'EU', 'UK'],
   technicalSpecification?: string,
+  preCreatedAnalysisId?: string,
 ): Promise<AnalysisResult> {
   const session = createSession(claimText, jurisdictions, technicalSpecification);
   const persist = !!env.DATABASE_URL;
-  let analysisId: string | undefined;
+  let analysisId: string | undefined = preCreatedAnalysisId;
 
   logger.info(
-    { sessionId: session.id, jurisdictions, persist },
+    { sessionId: session.id, jurisdictions, persist, analysisId },
     'Lead Counsel: starting patent defensibility analysis',
   );
 
   try {
-    // Create DB record if persistence is enabled
-    if (persist) {
+    // Create DB record if persistence is enabled and not pre-created
+    if (persist && !analysisId) {
       analysisId = await createAnalysis(session);
       logger.debug({ analysisId }, 'Lead Counsel: DB record created');
     }

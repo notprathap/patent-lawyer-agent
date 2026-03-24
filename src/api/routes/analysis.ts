@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { runAnalysis } from '../../orchestrator/lead-counsel.js';
-import { getAnalysis, listAnalyses } from '../../db/repositories/analysis.repo.js';
+import {
+  getAnalysis,
+  listAnalyses,
+  createAnalysisRecord,
+} from '../../db/repositories/analysis.repo.js';
 import { logger } from '../../utils/logger.js';
 import type { Jurisdiction } from '../../types/index.js';
-
-// In-memory tracking of running analyses (for the simple async model)
-const runningAnalyses = new Map<string, { status: string; error?: string }>();
 
 export function registerAnalysisRoutes(app: FastifyInstance) {
   // POST /api/v1/analyses — Start a new analysis
@@ -57,42 +58,22 @@ export function registerAnalysisRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'claimText cannot be empty' });
     }
 
-    // Generate a temporary ID for tracking
-    const tempId = `pending-${Date.now()}`;
-    runningAnalyses.set(tempId, { status: 'PENDING' });
-
     logger.info({ jurisdictions, claimLength: claimText.length }, 'API: starting analysis');
 
-    // Fire and forget — run analysis asynchronously
-    const analysisPromise = runAnalysis(claimText, jurisdictions, technicalSpec);
+    // Create the DB record FIRST so we have a real ID to return immediately
+    const analysisId = await createAnalysisRecord(claimText, jurisdictions, technicalSpec);
 
-    // Track completion
-    analysisPromise
+    // Fire and forget — run analysis asynchronously, passing the pre-created ID
+    runAnalysis(claimText, jurisdictions, technicalSpec, analysisId)
       .then((result) => {
-        if (result.analysisId) {
-          runningAnalyses.set(tempId, { status: 'COMPLETE' });
-          // Map temp ID to real ID
-          runningAnalyses.set(result.analysisId, { status: 'COMPLETE' });
-        }
         logger.info({ analysisId: result.analysisId }, 'API: analysis completed');
       })
       .catch((err) => {
-        runningAnalyses.set(tempId, {
-          status: 'FAILED',
-          error: err instanceof Error ? err.message : String(err),
-        });
-        logger.error({ error: err }, 'API: analysis failed');
+        logger.error({ analysisId, error: err }, 'API: analysis failed');
       });
 
-    // Wait briefly to see if the DB record gets created (usually within 1s)
-    await new Promise((r) => setTimeout(r, 2000));
-
-    // Try to find the real analysis ID from the DB
-    const recentAnalyses = await listAnalyses(1, 0);
-    const realId = recentAnalyses[0]?.id;
-
     return reply.status(202).send({
-      analysisId: realId || tempId,
+      analysisId,
       status: 'PENDING',
       message: 'Analysis started. Poll GET /api/v1/analyses/:id for status.',
     });
@@ -119,11 +100,6 @@ export function registerAnalysisRoutes(app: FastifyInstance) {
     const analysis = await getAnalysis(id);
 
     if (!analysis) {
-      // Check in-memory tracking
-      const tracked = runningAnalyses.get(id);
-      if (tracked) {
-        return { id, status: tracked.status, error: tracked.error };
-      }
       return reply.status(404).send({ error: 'Analysis not found' });
     }
 

@@ -24,6 +24,29 @@ export async function createAnalysis(session: AnalysisSession): Promise<string> 
 }
 
 /**
+ * Create a new analysis record directly from parameters (used by API route).
+ */
+export async function createAnalysisRecord(
+  claimText: string,
+  jurisdictions: string[],
+  technicalSpec?: string,
+): Promise<string> {
+  const prisma = getPrismaClient();
+
+  const analysis = await prisma.analysis.create({
+    data: {
+      claimText,
+      technicalSpec: technicalSpec || null,
+      jurisdictions,
+      status: 'PENDING',
+    },
+  });
+
+  logger.debug({ analysisId: analysis.id }, 'DB: analysis record created');
+  return analysis.id;
+}
+
+/**
  * Update analysis status.
  */
 export async function updateAnalysisStatus(
