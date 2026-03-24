@@ -71,9 +71,10 @@ The engine all agents share:
 
 ### 1b. Type System (`src/types/index.ts`)
 Core types flowing between agents:
+- `Jurisdiction` — `'US' | 'EU' | 'UK'`
 - `ClaimElement` — { id, text, type: 'structural'|'functional'|'method_step', isMeansPlusFunction }
 - `ParsedClaim` — { fullText, claimNumber, isIndependent, elements: ClaimElement[] }
-- `AnalysisInput` — { claimText, technicalSpecification? }
+- `AnalysisInput` — { claimText, technicalSpecification?, jurisdictions: Jurisdiction[] }
 - `AgentResult<T>` — { data: T, reasoning: string, confidence: number, tokensUsed: number }
 
 ### 1c. Claim Deconstructor (`src/agents/claim-deconstructor.ts`)
@@ -93,10 +94,11 @@ Core types flowing between agents:
 ### 2a. Tool Framework (`src/tools/tool-registry.ts`)
 Standardized tool definition: name, description, Zod input schema, async `execute()`, error wrapper.
 
-### 2b. Search Tools (start with free APIs)
-- `src/tools/patent-search/uspto-search.ts` — USPTO PatentsView API (free, no key required)
-- `src/tools/patent-search/semantic-scholar.ts` — Semantic Scholar API (free, 100 req/sec)
-- Later: Add SerpAPI Google Patents, EPO, WIPO as paid tier
+### 2b. Search Tools (start with free APIs, cover all 3 jurisdictions)
+- `src/tools/patent-search/uspto-search.ts` — USPTO PatentsView API (free, no key) — **US**
+- `src/tools/patent-search/epo-ops-search.ts` — EPO Open Patent Services API (free with registration) — **EU/UK**
+- `src/tools/patent-search/semantic-scholar.ts` — Semantic Scholar API (free, 100 req/sec) — **All (NPL)**
+- Later: Add SerpAPI Google Patents, UK IPO Ipsum, WIPO PATENTSCOPE as paid/extended tier
 
 ### 2c. Prior Art Investigator (`src/agents/prior-art-investigator.ts`)
 - System prompt: `src/prompts/prior-art-investigator.md`
@@ -105,34 +107,57 @@ Standardized tool definition: name, description, Zod input schema, async `execut
 - Iterative refinement: if coverage insufficient, generates new queries
 - Output: `PriorArtReport` with per-element ranked references (all with verifiable URLs/pub numbers)
 
-**New types:** `PriorArtReference`, `ElementCoverage`, `PriorArtReport`
+**New types:** `PriorArtReference` (now includes `jurisdictions: Jurisdiction[]` tag), `ElementCoverage`, `PriorArtReport`
 
-**Verify:** Integration test with a known patent. Verify references have valid URLs/publication numbers.
+**Verify:** Integration test with a known patent. Verify references have valid URLs/publication numbers. Verify results come from both USPTO and EPO sources.
 
 ---
 
-## Phase 3: Patent Examiner (Adversarial Agent)
+## Phase 3: Patent Examiner (Adversarial Agent) — Multi-Jurisdiction
 
-**Goal:** Construct invalidity arguments from prior art.
+**Goal:** Construct invalidity arguments from prior art using the correct legal test per jurisdiction.
 
 ### 3a. Static Legal Knowledge Base (`src/services/legal-knowledge.ts`)
-Pre-RAG stopgap with key legal standards:
+Pre-RAG stopgap with key legal standards for all three jurisdictions:
+
+**US:**
 - 35 U.S.C. §§ 101, 102, 103, 112 text
 - Graham v. John Deere factors
 - KSR v. Teleflex obviousness rationales
 - Alice Corp v. CLS Bank 101 framework
 
-### 3b. Patent Examiner (`src/agents/patent-examiner.ts`)
-- System prompt: `src/prompts/patent-examiner.md`
+**EU/EPO:**
+- EPC Articles 52-57 (patentability, novelty, inventive step)
+- Problem-Solution Approach (3-step test for inventive step)
+- "Could-would" approach definition
+- Key Board of Appeal decisions (T 24/81, T 641/00)
+
+**UK:**
+- UK Patents Act 1977 Sections 1-6 (patentability)
+- Windsurfing/Pozzoli 4-step test for inventive step
+- Aerotel/Macrossan test for excluded subject matter
+- Key UK precedents (Pozzoli v. BDMO, Conor v. Angiotech)
+
+### 3b. Jurisdiction Strategy (`src/services/jurisdiction-strategy.ts`)
+Maps each jurisdiction to its specific legal test:
+- `getNoveltyTest(jurisdiction)` → returns the framework (§102 / EPC Art. 54 / UK s.2)
+- `getInventiveStepTest(jurisdiction)` → returns the framework (Graham+KSR / Problem-Solution / Pozzoli)
+- `getEligibilityTest(jurisdiction)` → returns the framework (Alice / Art. 52(2) / Aerotel)
+
+### 3c. Patent Examiner (`src/agents/patent-examiner.ts`)
+- System prompt: `src/prompts/patent-examiner.md` — includes all three frameworks with clear instructions to apply the correct test per jurisdiction
 - Tools: `lookup_legal_standard` (static lookup, replaced by RAG in Phase 6)
-- Input: `ParsedClaim` + `PriorArtReport`
-- Constructs anticipation (§102) and obviousness (§103) arguments
-- Applies Graham v. John Deere factors, PHOSITA analysis
-- Output: `InvalidityAnalysis` with per-argument strength ratings
+- Input: `ParsedClaim` + `PriorArtReport` + `Jurisdiction[]`
+- For each jurisdiction, constructs invalidity arguments using the jurisdiction-specific test
+- Output: `MultiJurisdictionAnalysis` with per-jurisdiction results
 
-**New types:** `AnticipationArgument`, `ObviousnessArgument`, `GrahamFactors`, `InvalidityAnalysis`
+**New types:**
+- `USAnalysis` — { anticipationArgs: AnticipationArgument[], obviousnessArgs: ObviousnessArgument[], grahamFactors: GrahamFactors }
+- `EPOAnalysis` — { noveltyArgs, problemSolutionApproach: { closestPriorArt, objectiveTechnicalProblem, couldWouldAnalysis }, boardOfAppealCitations }
+- `UKAnalysis` — { noveltyArgs, pozzoliTest: { skilledPerson, inventiveConcept, differences, obviousnessAssessment }, ukCaseLawCitations }
+- `MultiJurisdictionAnalysis` — { us?: USAnalysis, epo?: EPOAnalysis, uk?: UKAnalysis, divergences: string[] }
 
-**Verify:** Feed examiner a claim + report with overlapping prior art. Verify it produces arguments with correct legal citations.
+**Verify:** Feed examiner a claim + report with overlapping prior art for all 3 jurisdictions. Verify it produces jurisdiction-correct arguments (Graham for US, Problem-Solution for EU, Pozzoli for UK). Verify it identifies divergences where outcomes differ.
 
 ---
 
@@ -142,25 +167,25 @@ Pre-RAG stopgap with key legal standards:
 
 ### 4a. Orchestrator (`src/orchestrator/lead-counsel.ts`)
 **Deterministic workflow** (not an autonomous LLM deciding what to do):
-1. Validate input (Claude call: is this a patent claim?)
+1. Validate input (Claude call: is this a patent claim?) + identify target jurisdictions
 2. Call Claim Deconstructor → `ParsedClaim`
-3. Call Prior Art Investigator → `PriorArtReport`
-4. Call Patent Examiner → `InvalidityAnalysis`
-5. Reflection step (Claude call: check for gaps, inconsistencies)
-6. If gaps → re-trigger specific agents
-7. Synthesis step (Claude call: produce final memo)
+3. Call Prior Art Investigator (searches across all jurisdiction DBs) → `PriorArtReport`
+4. Call Patent Examiner **per jurisdiction** (can run in parallel for US/EU/UK) → `MultiJurisdictionAnalysis`
+5. Reflection step (Claude call: check for gaps, inconsistencies, cross-jurisdiction coherence)
+6. If gaps → re-trigger specific agents for specific jurisdictions
+7. Synthesis step (Claude call: produce final memo with cross-jurisdictional comparison)
 
 ### 4b. Session / Working Memory (`src/orchestrator/session.ts`)
 In-memory session tracking: current step, intermediate results, element-to-reference mapping, issues found.
 
 ### 4c. Memo Generator (`src/services/memo-generator.ts`)
-Template-driven structure (all 8 sections from PRODUCT_SPEC.md) with Claude-synthesized prose.
+Template-driven structure (all 10 sections from PRODUCT_SPEC.md) with Claude-synthesized prose. Includes per-jurisdiction analysis sections (US, EU/EPO, UK) and a cross-jurisdictional comparison section.
 
 ### 4d. Confidence Scorer (`src/services/confidence-scorer.ts`)
-- **Defensibility Rating** (Strong/Moderate/Weak) — based on prior art coverage + argument strength
+- **Per-Jurisdiction Defensibility Rating** (Strong/Moderate/Weak) for each of US, EU, UK
 - **Assessment Confidence** (High/Medium/Low) — based on sources searched + coverage completeness
 
-**Verify:** End-to-end test: real patent claim → complete 8-section memo. Target < 10 min.
+**Verify:** End-to-end test: real patent claim → complete 10-section memo with all 3 jurisdictions. Target < 15 min.
 
 **This is the first usable milestone — a working CLI tool.**
 
@@ -171,13 +196,13 @@ Template-driven structure (all 8 sections from PRODUCT_SPEC.md) with Claude-synt
 **Goal:** Persist analyses to Neon PostgreSQL via Prisma.
 
 ### Prisma Schema Models
-- `Analysis` — { id, status, claimText, technicalSpec, createdAt, updatedAt }
+- `Analysis` — { id, status, claimText, technicalSpec, jurisdictions: Jurisdiction[], createdAt, updatedAt }
 - `ClaimElement` — { id, analysisId, text, type, isMeansPlusFunction }
-- `PriorArtReference` — { id, title, url, publicationNumber, source, relevantExcerpt }
+- `PriorArtReference` — { id, title, url, publicationNumber, source, jurisdictions, relevantExcerpt }
 - `ElementReference` — join table with relevanceScore, coverageLevel
-- `InvalidityArgument` — { id, analysisId, type, strength, content (JSON) }
-- `DefensibilityMemo` — { id, analysisId, content (JSON), rating, confidence }
-- `SearchQuery` — { id, analysisId, query, source, resultCount }
+- `InvalidityArgument` — { id, analysisId, jurisdiction, type, strength, content (JSON) }
+- `DefensibilityMemo` — { id, analysisId, content (JSON), usRating, epoRating, ukRating, confidence }
+- `SearchQuery` — { id, analysisId, query, source, jurisdiction, resultCount }
 
 ### Repository Layer
 - `src/db/repositories/analysis.repo.ts`
@@ -207,18 +232,40 @@ Template-driven structure (all 8 sections from PRODUCT_SPEC.md) with Claude-synt
 - Raw SQL via `prisma.$queryRaw` for cosine similarity searches
 
 ### 6c. Ingestion Scripts (`scripts/`)
+
+**US Sources:**
 - `ingest-mpep.ts` — Start with Chapter 2100 (Patentability), expand later
-- `ingest-statutes.ts` — 35 U.S.C. full text
-- `ingest-case-law.ts` — Landmark cases (Graham, KSR, Alice, Mayo, etc.)
-- Chunking: ~500-1000 tokens per chunk, 100 token overlap
+- `ingest-us-statutes.ts` — 35 U.S.C. full text
+- `ingest-us-case-law.ts` — Landmark US cases (Graham, KSR, Alice, Mayo, etc.)
+
+**EU/EPO Sources:**
+- `ingest-epo-guidelines.ts` — EPO Guidelines for Examination (start with Part G: Patentability)
+- `ingest-epc.ts` — European Patent Convention Articles + Rules
+- `ingest-epo-case-law.ts` — Key Board of Appeal decisions + Case Law of the Boards of Appeal compilation
+
+**UK Sources:**
+- `ingest-uk-patents-act.ts` — UK Patents Act 1977
+- `ingest-uk-mopp.ts` — UK Manual of Patent Practice (MOPP)
+- `ingest-uk-case-law.ts` — Key UK cases (Pozzoli, Aerotel/Macrossan, Actavis, Conor, HTC v. Apple)
+
+**All sources tagged with jurisdiction metadata for filtered retrieval.**
+Chunking: ~500-1000 tokens per chunk, 100 token overlap.
 
 ### 6d. RAG Retrieval (`src/services/rag-retrieval.ts`)
 - Query → embed → cosine similarity search → top-k results with scores
-- Filter by source type (MPEP, case law, statutes)
+- **Filter by jurisdiction** (US only, EU only, UK only, or all)
+- Filter by source type (examination guidelines, case law, statutes)
 
 ### 6e. Replace `lookup_legal_standard` tool with `search_legal_knowledge` RAG tool
+- Accepts a `jurisdiction` parameter to scope results
+- Patent Examiner passes the current jurisdiction being analyzed
 
-**Verify:** Ingest MPEP Ch. 2100, query "Graham v. John Deere factors" → verify correct section returned. Run full pipeline with RAG → verify legal citations come from vector DB.
+**Verify:**
+- Ingest MPEP Ch. 2100 + EPO Guidelines Part G + UK MOPP relevant sections
+- Query "Graham v. John Deere factors" with jurisdiction=US → verify correct MPEP section
+- Query "Problem-Solution Approach" with jurisdiction=EU → verify correct EPO Guidelines section
+- Query "Pozzoli test" with jurisdiction=UK → verify correct UK case law
+- Run full pipeline with RAG → verify legal citations come from the correct jurisdiction's knowledge base
 
 ---
 
@@ -228,21 +275,26 @@ Template-driven structure (all 8 sections from PRODUCT_SPEC.md) with Claude-synt
 
 ### Citation Validator (`src/services/citation-validator.ts`)
 - Extract all citations from draft memo
-- Patent citations: verify pub number format, optionally confirm via USPTO API
+- Patent citations: verify pub number format per jurisdiction (US: US-XXXXXXX, EP: EP-XXXXXXX, GB: GB-XXXXXXX), optionally confirm via respective APIs
 - NPL citations: HTTP HEAD to verify URL is reachable
-- Legal citations: verify existence in RAG knowledge base
+- Legal citations: verify existence in RAG knowledge base **scoped to the correct jurisdiction**
+- **Jurisdiction-consistency check:** ensure US sections cite US law, EU sections cite EPC/EPO, UK sections cite UK law
 
 ### Output Guardrails (`src/services/guardrails.ts`)
 Post-processing pipeline:
 1. **Citation Required** — flag factual claims without citations
-2. **Legal Grounding** — flag legal assertions without MPEP/statute/case references
-3. **No Fabricated Case Law** — cross-reference case names against RAG DB
-4. **Confidence Adjustment** — downgrade score if citations fail validation
+2. **Legal Grounding** — flag legal assertions without jurisdiction-appropriate references (MPEP for US, EPO Guidelines for EU, MOPP for UK)
+3. **No Fabricated Case Law** — cross-reference case names against RAG DB per jurisdiction
+4. **No Cross-Contamination** — flag if US analysis cites EPO Guidelines or UK analysis cites MPEP (wrong jurisdiction)
+5. **Confidence Adjustment** — downgrade score if citations fail validation
 
 ### Input Validator (`src/services/input-validator.ts`)
 - Claude call to classify: valid patent claim?
 - Reject non-patent text, flag overly broad claims
-- Detect §101 eligibility issues (Alice/Mayo framework)
+- Detect subject matter eligibility issues per jurisdiction:
+  - US: §101 (Alice/Mayo)
+  - EU: EPC Art. 52(2)/(3) exclusions
+  - UK: Section 1(2) exclusions (Aerotel/Macrossan test)
 
 ### Orchestrator Integration
 Reflection step now: run citation validation → apply guardrails → re-trigger if issues found → append validation report to memo.
@@ -259,7 +311,7 @@ Reflection step now: run citation validation → apply guardrails → re-trigger
 With Pino logging, Zod validation, CORS, rate limiting.
 
 ### Routes (`src/api/routes/`)
-- `POST /api/v1/analyses` — Start analysis (returns ID immediately)
+- `POST /api/v1/analyses` — Start analysis (body includes `jurisdictions: ['US','EU','UK']`, returns ID immediately)
 - `GET /api/v1/analyses/:id` — Status + results
 - `GET /api/v1/analyses/:id/memo` — Final memo
 - `GET /api/v1/analyses` — List (paginated)
@@ -336,6 +388,8 @@ Phases 5 and 6 can run in parallel. All other phases are sequential.
 ANTHROPIC_API_KEY=             # Claude API
 DATABASE_URL=                  # Neon PostgreSQL connection string
 VOYAGE_API_KEY=                # Voyage AI embeddings (Phase 6+)
+EPO_CONSUMER_KEY=              # EPO Open Patent Services (free registration required)
+EPO_CONSUMER_SECRET=           # EPO OPS secret
 SERPAPI_API_KEY=                # Google Patents (optional, Phase 2+)
 REDIS_URL=redis://localhost:6379  # BullMQ (Phase 8+)
 HELICONE_API_KEY=              # Observability (Phase 9+, optional)
@@ -352,8 +406,10 @@ NODE_ENV=development
 | Patent API rate limits | Circuit breakers, caching, graceful degradation |
 | Context window overflow on complex claims | Element-by-element approach keeps per-call context small |
 | Hallucinated citations | Citation validation is a hard gate — memo can't be "complete" until all pass |
-| MPEP ingestion complexity | Start with Ch. 2100 only, expand incrementally |
-| Cost per analysis | Track tokens, use Sonnet for most agents, Opus only for synthesis |
+| Legal knowledge ingestion complexity | Start with core sections per jurisdiction (MPEP Ch. 2100, EPO Part G, UK MOPP patentability), expand incrementally |
+| Cost per analysis (3x with 3 jurisdictions) | Run jurisdiction analyses in parallel; track tokens; use Sonnet for most agents, Opus only for synthesis |
+| Cross-jurisdiction contamination | Guardrail checks ensure US sections cite US law, EU sections cite EPC, UK sections cite UK law |
+| EPO/UK source availability | EPO Guidelines and EPC are freely available; UK MOPP is published by UK IPO; Board of Appeal decisions via EPO case law database |
 | pgvector + Prisma friction | Clean abstraction layer; evaluate Drizzle if friction is too high |
 
 ---
