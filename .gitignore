@@ -38,5 +38,9 @@ docker/.env
 # Ingestion cache
 scripts/cache/
 
+# Next.js
+web/.next/
+web/node_modules/
+
 # Misc
 *.tsbuildinfo
