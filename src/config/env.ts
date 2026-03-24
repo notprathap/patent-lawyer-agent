@@ -11,6 +11,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
 
   // Patent search APIs (Phase 2+)
+  PATENTSVIEW_API_KEY: z.string().optional(),
   EPO_CONSUMER_KEY: z.string().optional(),
   EPO_CONSUMER_SECRET: z.string().optional(),
   SERPAPI_API_KEY: z.string().optional(),
