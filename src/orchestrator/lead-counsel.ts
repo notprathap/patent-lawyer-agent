@@ -1,0 +1,267 @@
+import { getClaudeClient, DEFAULT_MODEL } from '../lib/claude.js';
+import { logger } from '../utils/logger.js';
+import { deconstructClaim } from '../agents/claim-deconstructor.js';
+import { investigatePriorArt } from '../agents/prior-art-investigator.js';
+import { examinePatent } from '../agents/patent-examiner.js';
+import { computeConfidenceReport, type ConfidenceReport } from '../services/confidence-scorer.js';
+import { generateMemo } from '../services/memo-generator.js';
+import {
+  createSession,
+  addTokenUsage,
+  type AnalysisSession,
+} from './session.js';
+import type { Jurisdiction } from '../types/index.js';
+
+export interface AnalysisResult {
+  session: AnalysisSession;
+  memo: string;
+  confidenceReport: ConfidenceReport;
+}
+
+/**
+ * Lead Counsel Orchestrator — deterministic workflow that chains all agents.
+ *
+ * Steps:
+ * 1. Validate input
+ * 2. Deconstruct claim → ParsedClaim
+ * 3. Search prior art → PriorArtReport
+ * 4. Examine patent (all jurisdictions) → MultiJurisdictionAnalysis
+ * 5. Reflect — check for gaps
+ * 6. Score confidence
+ * 7. Synthesize final memo
+ */
+export async function runAnalysis(
+  claimText: string,
+  jurisdictions: Jurisdiction[] = ['US', 'EU', 'UK'],
+  technicalSpecification?: string,
+): Promise<AnalysisResult> {
+  const session = createSession(claimText, jurisdictions, technicalSpecification);
+
+  logger.info(
+    { sessionId: session.id, jurisdictions },
+    'Lead Counsel: starting patent defensibility analysis',
+  );
+
+  try {
+    // Step 1: Validate input
+    session.step = 'validating';
+    await validateInput(session);
+
+    // Step 2: Deconstruct claim
+    session.step = 'deconstructing';
+    logger.info({ sessionId: session.id }, 'Lead Counsel: Step 2 — deconstructing claim');
+    const claimResult = await deconstructClaim(session.claimText);
+    session.parsedClaim = claimResult.data;
+    addTokenUsage(session, claimResult.tokensUsed);
+
+    logger.info(
+      {
+        sessionId: session.id,
+        elements: session.parsedClaim.elements.length,
+        isIndependent: session.parsedClaim.isIndependent,
+      },
+      'Lead Counsel: claim deconstructed',
+    );
+
+    // Step 3: Search prior art
+    session.step = 'searching_prior_art';
+    logger.info({ sessionId: session.id }, 'Lead Counsel: Step 3 — searching prior art');
+    const priorArtResult = await investigatePriorArt(session.parsedClaim);
+    session.priorArtReport = priorArtResult.data;
+    addTokenUsage(session, priorArtResult.tokensUsed);
+
+    logger.info(
+      {
+        sessionId: session.id,
+        totalReferences: session.priorArtReport.totalReferencesFound,
+        sourcesSearched: session.priorArtReport.sourcesSearched,
+      },
+      'Lead Counsel: prior art search complete',
+    );
+
+    // Step 4: Examine patent across all jurisdictions
+    session.step = 'examining';
+    logger.info(
+      { sessionId: session.id, jurisdictions },
+      'Lead Counsel: Step 4 — examining patent',
+    );
+    const examinerResult = await examinePatent(
+      session.parsedClaim,
+      session.priorArtReport,
+      jurisdictions,
+    );
+    session.examinerAnalysis = examinerResult.data;
+    addTokenUsage(session, examinerResult.tokensUsed);
+
+    logger.info(
+      {
+        sessionId: session.id,
+        usStrength: session.examinerAnalysis.us?.overallStrength,
+        epoStrength: session.examinerAnalysis.epo?.overallStrength,
+        ukStrength: session.examinerAnalysis.uk?.overallStrength,
+        divergences: session.examinerAnalysis.divergences.length,
+      },
+      'Lead Counsel: examination complete',
+    );
+
+    // Step 5: Reflect — check for gaps and inconsistencies
+    session.step = 'reflecting';
+    logger.info({ sessionId: session.id }, 'Lead Counsel: Step 5 — reflecting');
+    const reflectionNotes = await reflect(session);
+    session.reflectionNotes = reflectionNotes;
+
+    if (reflectionNotes.includes('CRITICAL GAP')) {
+      session.issues.push(`Reflection flagged critical gaps: ${reflectionNotes}`);
+      logger.warn(
+        { sessionId: session.id, notes: reflectionNotes },
+        'Lead Counsel: critical gaps found during reflection',
+      );
+    }
+
+    // Step 6: Score confidence
+    const confidenceReport = computeConfidenceReport(
+      session.priorArtReport,
+      session.examinerAnalysis,
+      jurisdictions,
+    );
+
+    logger.info(
+      {
+        sessionId: session.id,
+        scores: confidenceReport.jurisdictionScores.map((s) => ({
+          jur: s.jurisdiction,
+          def: s.defensibility,
+        })),
+        confidence: confidenceReport.assessmentConfidence,
+      },
+      'Lead Counsel: confidence scored',
+    );
+
+    // Step 7: Synthesize final memo
+    session.step = 'synthesizing';
+    logger.info({ sessionId: session.id }, 'Lead Counsel: Step 7 — synthesizing memo');
+    const memoResult = await generateMemo({
+      parsedClaim: session.parsedClaim,
+      priorArtReport: session.priorArtReport,
+      analysis: session.examinerAnalysis,
+      confidenceReport,
+      jurisdictions,
+    });
+    session.memo = memoResult.memo;
+    addTokenUsage(session, memoResult.tokensUsed);
+
+    // Complete
+    session.step = 'complete';
+    session.completedAt = new Date();
+
+    const durationMs = session.completedAt.getTime() - session.startedAt.getTime();
+
+    logger.info(
+      {
+        sessionId: session.id,
+        durationMs,
+        durationMin: (durationMs / 60000).toFixed(1),
+        totalInputTokens: session.totalTokensUsed.input,
+        totalOutputTokens: session.totalTokensUsed.output,
+        memoLength: session.memo.length,
+      },
+      'Lead Counsel: analysis complete',
+    );
+
+    return {
+      session,
+      memo: session.memo,
+      confidenceReport,
+    };
+  } catch (error) {
+    session.step = 'failed';
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    session.issues.push(`Fatal error: ${errorMessage}`);
+    logger.error(
+      { sessionId: session.id, error: errorMessage },
+      'Lead Counsel: analysis failed',
+    );
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Input Validation
+// ---------------------------------------------------------------------------
+
+async function validateInput(session: AnalysisSession): Promise<void> {
+  const client = getClaudeClient();
+
+  const response = await client.messages.create({
+    model: DEFAULT_MODEL,
+    max_tokens: 256,
+    messages: [
+      {
+        role: 'user',
+        content: `Is the following text a valid patent claim or close to one? Answer only "YES" or "NO" followed by a brief reason.\n\n${session.claimText}`,
+      },
+    ],
+  });
+
+  const text =
+    response.content
+      .filter((b) => b.type === 'text')
+      .map((b) => 'text' in b ? (b as { text: string }).text : '')
+      .join('') || '';
+
+  addTokenUsage(session, {
+    input: response.usage.input_tokens,
+    output: response.usage.output_tokens,
+  });
+
+  if (text.toUpperCase().startsWith('NO')) {
+    throw new Error(`Input validation failed: "${text}"`);
+  }
+
+  logger.info({ sessionId: session.id, validation: text.slice(0, 100) }, 'Lead Counsel: input validated');
+}
+
+// ---------------------------------------------------------------------------
+// Step 5: Reflection
+// ---------------------------------------------------------------------------
+
+async function reflect(session: AnalysisSession): Promise<string> {
+  const client = getClaudeClient();
+
+  const coverageSummary = session.priorArtReport!.elementCoverages
+    .map((ec) => `${ec.elementId}: ${ec.coverageLevel} (${ec.references.length} refs)`)
+    .join(', ');
+
+  const response = await client.messages.create({
+    model: DEFAULT_MODEL,
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: `Review the following analysis for gaps or inconsistencies. Flag any CRITICAL GAPs that would require re-running agents.
+
+Claim elements: ${session.parsedClaim!.elements.length}
+Prior art coverage: ${coverageSummary}
+US analysis: ${session.examinerAnalysis!.us ? `${session.examinerAnalysis!.us.overallStrength} (${session.examinerAnalysis!.us.obviousnessArgs.length} obviousness args)` : 'missing'}
+EPO analysis: ${session.examinerAnalysis!.epo ? `${session.examinerAnalysis!.epo.overallStrength} (${session.examinerAnalysis!.epo.inventiveStepArgs.length} inventive step args)` : 'missing'}
+UK analysis: ${session.examinerAnalysis!.uk ? `${session.examinerAnalysis!.uk.overallStrength} (${session.examinerAnalysis!.uk.inventiveStepArgs.length} inventive step args)` : 'missing'}
+Divergences: ${session.examinerAnalysis!.divergences.length}
+
+Respond concisely. If everything looks reasonable, say "No critical gaps." If there are issues, prefix with "CRITICAL GAP:" and explain.`,
+      },
+    ],
+  });
+
+  const text =
+    response.content
+      .filter((b) => b.type === 'text')
+      .map((b) => 'text' in b ? (b as { text: string }).text : '')
+      .join('') || '';
+
+  addTokenUsage(session, {
+    input: response.usage.input_tokens,
+    output: response.usage.output_tokens,
+  });
+
+  return text;
+}
