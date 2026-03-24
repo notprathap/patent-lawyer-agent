@@ -1,9 +1,11 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
 }
 
 // ---------------------------------------------------------------------------
@@ -154,4 +156,24 @@ model SearchQuery {
   analysis            Analysis             @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
   @@index([analysisId])
+}
+
+// ---------------------------------------------------------------------------
+// LegalDocument — RAG knowledge base chunks with vector embeddings
+// The `embedding` vector column is managed via raw SQL (not Prisma-native).
+// ---------------------------------------------------------------------------
+model LegalDocument {
+  id              String   @id @default(cuid())
+  content         String   // The text chunk
+  source          String   // "MPEP" | "35_USC" | "SCOTUS" | "EPO_Guidelines" | "EPC" | "UK_Patents_Act" | "UK_MOPP" | "UK_Case_Law"
+  jurisdiction    String   // "US" | "EU" | "UK"
+  sectionId       String   // e.g., "2141", "Art_56", "s3"
+  title           String   // e.g., "MPEP § 2141 — Examination Guidelines for Obviousness"
+  sourceUrl       String?  // Original URL
+  metadata        Json?    // Additional metadata (chunkIndex, caseYear, etc.)
+  createdAt       DateTime @default(now())
+
+  @@index([jurisdiction])
+  @@index([source])
+  @@unique([source, sectionId, title]) // For idempotent upserts
 }

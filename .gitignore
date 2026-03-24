@@ -35,5 +35,8 @@ coverage/
 # Docker
 docker/.env
 
+# Ingestion cache
+scripts/cache/
+
 # Misc
 *.tsbuildinfo
