@@ -6,6 +6,8 @@ import { investigatePriorArt } from '../agents/prior-art-investigator.js';
 import { examinePatent } from '../agents/patent-examiner.js';
 import { computeConfidenceReport, type ConfidenceReport } from '../services/confidence-scorer.js';
 import { generateMemo } from '../services/memo-generator.js';
+import { validateClaimInput } from '../services/input-validator.js';
+import { runGuardrails, type GuardrailResult } from '../services/guardrails.js';
 import {
   createSession,
   addTokenUsage,
@@ -25,6 +27,7 @@ export interface AnalysisResult {
   session: AnalysisSession;
   memo: string;
   confidenceReport: ConfidenceReport;
+  guardrailResult?: GuardrailResult;
   analysisId?: string;
 }
 
@@ -61,10 +64,27 @@ export async function runAnalysis(
       logger.debug({ analysisId }, 'Lead Counsel: DB record created');
     }
 
-    // Step 1: Validate input
+    // Step 1: Validate input (enhanced with eligibility detection)
     session.step = 'validating';
     if (persist && analysisId) await updateAnalysisStatus(analysisId, 'VALIDATING');
-    await validateInput(session);
+    const inputValidation = await validateClaimInput(session.claimText, jurisdictions);
+    addTokenUsage(session, inputValidation.tokensUsed);
+
+    if (!inputValidation.isValid) {
+      throw new Error(`Input validation failed: ${inputValidation.reason}`);
+    }
+
+    if (inputValidation.eligibilityWarnings.length > 0) {
+      for (const warn of inputValidation.eligibilityWarnings) {
+        session.issues.push(`${warn.jurisdiction} eligibility concern (${warn.framework}): ${warn.concern}`);
+      }
+      logger.warn(
+        { warnings: inputValidation.eligibilityWarnings },
+        'Lead Counsel: subject matter eligibility concerns detected',
+      );
+    }
+
+    logger.info({ sessionId: session.id, validation: inputValidation.reason.slice(0, 100) }, 'Lead Counsel: input validated');
 
     // Step 2: Deconstruct claim
     session.step = 'deconstructing';
@@ -177,6 +197,28 @@ export async function runAnalysis(
     session.memo = memoResult.memo;
     addTokenUsage(session, memoResult.tokensUsed);
 
+    // Step 8: Run guardrails
+    logger.info({ sessionId: session.id }, 'Lead Counsel: Step 8 — running guardrails');
+    const guardrailResult = await runGuardrails(session.memo, jurisdictions, confidenceReport);
+
+    // Use the memo with validation report appended
+    session.memo = guardrailResult.memoWithReport;
+
+    if (guardrailResult.confidenceAdjustment.shouldDowngrade) {
+      session.issues.push(`Confidence downgraded: ${guardrailResult.confidenceAdjustment.reason}`);
+      logger.warn(
+        { reason: guardrailResult.confidenceAdjustment.reason },
+        'Lead Counsel: confidence downgraded by guardrails',
+      );
+    }
+
+    if (!guardrailResult.passed) {
+      logger.warn(
+        { errors: guardrailResult.validationReport.failed },
+        'Lead Counsel: guardrail errors detected — memo may need attorney review',
+      );
+    }
+
     // Complete
     session.step = 'complete';
     session.completedAt = new Date();
@@ -191,6 +233,7 @@ export async function runAnalysis(
         totalInputTokens: session.totalTokensUsed.input,
         totalOutputTokens: session.totalTokensUsed.output,
         memoLength: session.memo.length,
+        guardrailsPassed: guardrailResult.passed,
       },
       'Lead Counsel: analysis complete',
     );
@@ -204,6 +247,7 @@ export async function runAnalysis(
       session,
       memo: session.memo,
       confidenceReport,
+      guardrailResult,
       analysisId,
     };
   } catch (error) {
@@ -219,42 +263,6 @@ export async function runAnalysis(
     );
     throw error;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Step 1: Input Validation
-// ---------------------------------------------------------------------------
-
-async function validateInput(session: AnalysisSession): Promise<void> {
-  const client = getClaudeClient();
-
-  const response = await client.messages.create({
-    model: DEFAULT_MODEL,
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'user',
-        content: `Is the following text a valid patent claim or close to one? Answer only "YES" or "NO" followed by a brief reason.\n\n${session.claimText}`,
-      },
-    ],
-  });
-
-  const text =
-    response.content
-      .filter((b) => b.type === 'text')
-      .map((b) => 'text' in b ? (b as { text: string }).text : '')
-      .join('') || '';
-
-  addTokenUsage(session, {
-    input: response.usage.input_tokens,
-    output: response.usage.output_tokens,
-  });
-
-  if (text.toUpperCase().startsWith('NO')) {
-    throw new Error(`Input validation failed: "${text}"`);
-  }
-
-  logger.info({ sessionId: session.id, validation: text.slice(0, 100) }, 'Lead Counsel: input validated');
 }
 
 // ---------------------------------------------------------------------------
