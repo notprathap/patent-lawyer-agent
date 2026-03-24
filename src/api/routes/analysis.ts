@@ -25,7 +25,21 @@ export function registerAnalysisRoutes(app: FastifyInstance) {
       }
 
       const buffer = await data.toBuffer();
-      claimText = buffer.toString('utf-8');
+      const fileName = data.filename?.toLowerCase() || '';
+
+      if (fileName.endsWith('.pdf')) {
+        // Extract text from PDF
+        const { PDFParse } = await import('pdf-parse');
+        const pdf = new PDFParse({ data: new Uint8Array(buffer) });
+        const textResult = await pdf.getText();
+        claimText = textResult.text || '';
+      } else {
+        // Read as UTF-8 text (.txt, .docx text content, etc.)
+        claimText = buffer.toString('utf-8');
+      }
+
+      // Strip null bytes (invalid in PostgreSQL TEXT columns)
+      claimText = claimText.replace(/\0/g, '');
 
       // Check for additional fields in the multipart form
       const fields = data.fields as Record<string, { value?: string } | undefined>;
