@@ -76,7 +76,8 @@ export default function NewAnalysis() {
         setSubmitting(false);
       }
     } catch (err) {
-      setError('Failed to start analysis. Is the API server running?');
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
       setSubmitting(false);
     }
   };

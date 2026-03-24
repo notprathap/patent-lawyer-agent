@@ -9,6 +9,8 @@ import { registerHealthRoute } from './routes/health.js';
 export async function createServer() {
   const app = Fastify({
     logger: false, // We use our own Pino logger
+    bodyLimit: 10 * 1024 * 1024, // 10MB max body size
+    requestTimeout: 30000, // 30s timeout for request handling
   });
 
   // Plugins

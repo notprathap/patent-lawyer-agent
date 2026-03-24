@@ -61,7 +61,14 @@ export function registerAnalysisRoutes(app: FastifyInstance) {
     logger.info({ jurisdictions, claimLength: claimText.length }, 'API: starting analysis');
 
     // Create the DB record FIRST so we have a real ID to return immediately
-    const analysisId = await createAnalysisRecord(claimText, jurisdictions, technicalSpec);
+    let analysisId: string;
+    try {
+      analysisId = await createAnalysisRecord(claimText, jurisdictions, technicalSpec);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ error: message }, 'API: failed to create analysis record');
+      return reply.status(500).send({ error: `Failed to create analysis: ${message}` });
+    }
 
     // Fire and forget — run analysis asynchronously, passing the pre-created ID
     runAnalysis(claimText, jurisdictions, technicalSpec, analysisId)
