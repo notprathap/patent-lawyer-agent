@@ -4,8 +4,154 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-// Schema will be expanded in Phase 5 (Database + Persistence).
-// This is the initial datasource configuration for Neon PostgreSQL.
+// ---------------------------------------------------------------------------
+// Analysis — top-level record for a patent defensibility analysis
+// ---------------------------------------------------------------------------
+model Analysis {
+  id                  String               @id @default(cuid())
+  status              AnalysisStatus       @default(PENDING)
+  claimText           String
+  technicalSpec       String?
+  jurisdictions       String[]             // ["US", "EU", "UK"]
+
+  // Intermediate results (stored as JSON for flexibility)
+  parsedClaim         Json?
+  priorArtReport      Json?
+  examinerAnalysis    Json?
+  reflectionNotes     String?
+
+  // Final output
+  memo                String?
+  confidenceReport    Json?
+
+  // Defensibility ratings per jurisdiction
+  usRating            String?              // "Strong" | "Moderate" | "Weak"
+  epoRating           String?
+  ukRating            String?
+  assessmentConfidence String?             // "High" | "Medium" | "Low"
+
+  // Token usage tracking
+  totalInputTokens    Int                  @default(0)
+  totalOutputTokens   Int                  @default(0)
+
+  // Timestamps
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  completedAt         DateTime?
+
+  // Relations
+  claimElements       ClaimElement[]
+  priorArtReferences  PriorArtReference[]
+  elementReferences   ElementReference[]
+  invalidityArguments InvalidityArgument[]
+  searchQueries       SearchQuery[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum AnalysisStatus {
+  PENDING
+  VALIDATING
+  DECONSTRUCTING
+  SEARCHING_PRIOR_ART
+  EXAMINING
+  REFLECTING
+  SYNTHESIZING
+  COMPLETE
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// ClaimElement — parsed elements from the patent claim
+// ---------------------------------------------------------------------------
+model ClaimElement {
+  id                  String               @id @default(cuid())
+  analysisId          String
+  elementIndex        String               // e.g., "E1", "E2"
+  text                String
+  type                String               // "structural" | "functional" | "method_step"
+  isMeansPlusFunction Boolean              @default(false)
+  position            Int                  // Order within the claim
+
+  analysis            Analysis             @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  elementReferences   ElementReference[]
+
+  @@index([analysisId])
+}
+
+// ---------------------------------------------------------------------------
+// PriorArtReference — discovered prior art documents
+// ---------------------------------------------------------------------------
+model PriorArtReference {
+  id                  String               @id @default(cuid())
+  analysisId          String
+  refIndex            String               // e.g., "R1", "R2" — the ID used within the analysis
+  title               String
+  url                 String
+  publicationNumber   String?
+  source              String               // "USPTO" | "EPO" | "Semantic_Scholar" etc.
+  date                String?
+  relevantExcerpt     String
+  jurisdictions       String[]             // ["US", "EU", "UK"]
+
+  analysis            Analysis             @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  elementReferences   ElementReference[]
+
+  @@index([analysisId])
+}
+
+// ---------------------------------------------------------------------------
+// ElementReference — join table mapping elements to references with scores
+// ---------------------------------------------------------------------------
+model ElementReference {
+  id                  String               @id @default(cuid())
+  analysisId          String
+  elementId           String
+  referenceId         String
+  relevanceScore      Float
+  coverageLevel       String               // "strong" | "moderate" | "weak" | "none"
+
+  analysis            Analysis             @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  element             ClaimElement         @relation(fields: [elementId], references: [id], onDelete: Cascade)
+  reference           PriorArtReference    @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@unique([elementId, referenceId])
+  @@index([analysisId])
+}
+
+// ---------------------------------------------------------------------------
+// InvalidityArgument — examiner's invalidity arguments per jurisdiction
+// ---------------------------------------------------------------------------
+model InvalidityArgument {
+  id                  String               @id @default(cuid())
+  analysisId          String
+  jurisdiction        String               // "US" | "EU" | "UK"
+  type                String               // "anticipation" | "obviousness" | "novelty" | "inventive_step"
+  strength            String               // "strong" | "moderate" | "weak"
+  content             Json                 // Full argument details (varies by jurisdiction)
+
+  analysis            Analysis             @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@index([jurisdiction])
+}
+
+// ---------------------------------------------------------------------------
+// SearchQuery — log of search queries made during prior art search
+// ---------------------------------------------------------------------------
+model SearchQuery {
+  id                  String               @id @default(cuid())
+  analysisId          String
+  query               String
+  source              String               // "USPTO" | "EPO" | "Semantic_Scholar"
+  jurisdiction        String?              // "US" | "EU" | "UK" or null for all
+  resultCount         Int                  @default(0)
+  executedAt          DateTime             @default(now())
+
+  analysis            Analysis             @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+}

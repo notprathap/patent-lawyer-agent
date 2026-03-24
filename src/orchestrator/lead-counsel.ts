@@ -1,5 +1,6 @@
 import { getClaudeClient, DEFAULT_MODEL } from '../lib/claude.js';
 import { logger } from '../utils/logger.js';
+import { env } from '../config/env.js';
 import { deconstructClaim } from '../agents/claim-deconstructor.js';
 import { investigatePriorArt } from '../agents/prior-art-investigator.js';
 import { examinePatent } from '../agents/patent-examiner.js';
@@ -10,12 +11,21 @@ import {
   addTokenUsage,
   type AnalysisSession,
 } from './session.js';
+import {
+  createAnalysis,
+  updateAnalysisStatus,
+  persistClaimElements,
+  persistPriorArtReport,
+  persistExaminerAnalysis,
+  persistFinalResults,
+} from '../db/repositories/analysis.repo.js';
 import type { Jurisdiction } from '../types/index.js';
 
 export interface AnalysisResult {
   session: AnalysisSession;
   memo: string;
   confidenceReport: ConfidenceReport;
+  analysisId?: string;
 }
 
 /**
@@ -36,19 +46,29 @@ export async function runAnalysis(
   technicalSpecification?: string,
 ): Promise<AnalysisResult> {
   const session = createSession(claimText, jurisdictions, technicalSpecification);
+  const persist = !!env.DATABASE_URL;
+  let analysisId: string | undefined;
 
   logger.info(
-    { sessionId: session.id, jurisdictions },
+    { sessionId: session.id, jurisdictions, persist },
     'Lead Counsel: starting patent defensibility analysis',
   );
 
   try {
+    // Create DB record if persistence is enabled
+    if (persist) {
+      analysisId = await createAnalysis(session);
+      logger.debug({ analysisId }, 'Lead Counsel: DB record created');
+    }
+
     // Step 1: Validate input
     session.step = 'validating';
+    if (persist && analysisId) await updateAnalysisStatus(analysisId, 'VALIDATING');
     await validateInput(session);
 
     // Step 2: Deconstruct claim
     session.step = 'deconstructing';
+    if (persist && analysisId) await updateAnalysisStatus(analysisId, 'DECONSTRUCTING');
     logger.info({ sessionId: session.id }, 'Lead Counsel: Step 2 — deconstructing claim');
     const claimResult = await deconstructClaim(session.claimText);
     session.parsedClaim = claimResult.data;
@@ -62,9 +82,11 @@ export async function runAnalysis(
       },
       'Lead Counsel: claim deconstructed',
     );
+    if (persist && analysisId) await persistClaimElements(analysisId, session);
 
     // Step 3: Search prior art
     session.step = 'searching_prior_art';
+    if (persist && analysisId) await updateAnalysisStatus(analysisId, 'SEARCHING_PRIOR_ART');
     logger.info({ sessionId: session.id }, 'Lead Counsel: Step 3 — searching prior art');
     const priorArtResult = await investigatePriorArt(session.parsedClaim);
     session.priorArtReport = priorArtResult.data;
@@ -78,9 +100,11 @@ export async function runAnalysis(
       },
       'Lead Counsel: prior art search complete',
     );
+    if (persist && analysisId) await persistPriorArtReport(analysisId, session);
 
     // Step 4: Examine patent across all jurisdictions
     session.step = 'examining';
+    if (persist && analysisId) await updateAnalysisStatus(analysisId, 'EXAMINING');
     logger.info(
       { sessionId: session.id, jurisdictions },
       'Lead Counsel: Step 4 — examining patent',
@@ -103,9 +127,11 @@ export async function runAnalysis(
       },
       'Lead Counsel: examination complete',
     );
+    if (persist && analysisId) await persistExaminerAnalysis(analysisId, session);
 
     // Step 5: Reflect — check for gaps and inconsistencies
     session.step = 'reflecting';
+    if (persist && analysisId) await updateAnalysisStatus(analysisId, 'REFLECTING');
     logger.info({ sessionId: session.id }, 'Lead Counsel: Step 5 — reflecting');
     const reflectionNotes = await reflect(session);
     session.reflectionNotes = reflectionNotes;
@@ -139,6 +165,7 @@ export async function runAnalysis(
 
     // Step 7: Synthesize final memo
     session.step = 'synthesizing';
+    if (persist && analysisId) await updateAnalysisStatus(analysisId, 'SYNTHESIZING');
     logger.info({ sessionId: session.id }, 'Lead Counsel: Step 7 — synthesizing memo');
     const memoResult = await generateMemo({
       parsedClaim: session.parsedClaim,
@@ -168,15 +195,24 @@ export async function runAnalysis(
       'Lead Counsel: analysis complete',
     );
 
+    // Persist final results
+    if (persist && analysisId) {
+      await persistFinalResults(analysisId, session, confidenceReport);
+    }
+
     return {
       session,
       memo: session.memo,
       confidenceReport,
+      analysisId,
     };
   } catch (error) {
     session.step = 'failed';
     const errorMessage = error instanceof Error ? error.message : String(error);
     session.issues.push(`Fatal error: ${errorMessage}`);
+    if (persist && analysisId) {
+      await updateAnalysisStatus(analysisId, 'FAILED').catch(() => {});
+    }
     logger.error(
       { sessionId: session.id, error: errorMessage },
       'Lead Counsel: analysis failed',
