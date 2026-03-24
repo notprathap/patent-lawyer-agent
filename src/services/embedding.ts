@@ -1,17 +1,27 @@
-import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
-const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
-const EMBEDDING_MODEL = 'voyage-3';
-export const EMBEDDING_DIMENSIONS = 1024;
+// Local embedding model — no API calls, no rate limits, no cost
+const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
+export const EMBEDDING_DIMENSIONS = 384;
 
-interface VoyageEmbeddingResponse {
-  data: Array<{ embedding: number[] }>;
-  usage: { total_tokens: number };
+// Lazy-loaded pipeline — typed as `any` because the HF transformers pipeline return type is complex
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let pipelineInstance: any = null;
+
+async function getPipeline() {
+  if (!pipelineInstance) {
+    logger.info({ model: MODEL_NAME }, 'Loading local embedding model (first time only)...');
+    const { pipeline } = await import('@huggingface/transformers');
+    pipelineInstance = await pipeline('feature-extraction', MODEL_NAME, {
+      dtype: 'fp32',
+    });
+    logger.info('Local embedding model loaded');
+  }
+  return pipelineInstance;
 }
 
 /**
- * Embed a single text string via Voyage AI REST API.
+ * Embed a single text string using local model.
  */
 export async function embedText(text: string): Promise<number[]> {
   const results = await embedTexts([text]);
@@ -19,86 +29,33 @@ export async function embedText(text: string): Promise<number[]> {
 }
 
 /**
- * Embed multiple texts in a batch via Voyage AI REST API.
- * Max 128 texts per batch.
+ * Embed multiple texts using local model.
+ * No rate limits, no API calls — runs entirely on CPU.
  */
 export async function embedTexts(texts: string[]): Promise<number[][]> {
-  if (!env.VOYAGE_API_KEY) {
-    throw new Error('VOYAGE_API_KEY is required for embedding operations');
-  }
-
-  // Small batches to stay within 10K TPM free tier (legal text chunks are ~500-1000 tokens each)
-  const batchSize = 8;
+  const pipe = await getPipeline();
   const allEmbeddings: number[][] = [];
 
+  // Process in small batches to avoid memory issues
+  const batchSize = 16;
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
 
-    logger.debug(
-      { batch: `${i + 1}-${Math.min(i + batchSize, texts.length)}/${texts.length}` },
-      'Embedding batch',
-    );
-
-    const response = await fetch(VOYAGE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.VOYAGE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        input: batch,
-        model: EMBEDDING_MODEL,
-      }),
-    });
-
-    if (response.status === 429) {
-      // Rate limited — wait a full minute and retry
-      logger.debug('Embedding: rate limited, waiting 65s...');
-      await new Promise((r) => setTimeout(r, 65000));
-
-      const retryResponse = await fetch(VOYAGE_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.VOYAGE_API_KEY}`,
-        },
-        body: JSON.stringify({ input: batch, model: EMBEDDING_MODEL }),
-      });
-
-      if (!retryResponse.ok) {
-        const errorText = await retryResponse.text();
-        throw new Error(`Voyage AI API error after retry (${retryResponse.status}): ${errorText}`);
-      }
-
-      const retryData = (await retryResponse.json()) as VoyageEmbeddingResponse;
-      for (const item of retryData.data) {
-        allEmbeddings.push(item.embedding);
-      }
-
-      // Throttle subsequent requests
-      await new Promise((r) => setTimeout(r, 21000));
-      continue;
+    if (texts.length > batchSize) {
+      logger.debug(
+        { batch: `${i + 1}-${Math.min(i + batchSize, texts.length)}/${texts.length}` },
+        'Embedding batch (local)',
+      );
     }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Voyage AI API error (${response.status}): ${errorText}`);
-    }
+    for (const text of batch) {
+      // Truncate to model's max length (~256 tokens ≈ ~1200 chars for safety)
+      const truncated = text.slice(0, 1200);
+      const output = await pipe(truncated, { pooling: 'mean', normalize: true });
 
-    const data = (await response.json()) as VoyageEmbeddingResponse;
-
-    if (!data.data || data.data.length === 0) {
-      throw new Error('Voyage AI returned no embeddings');
-    }
-
-    for (const item of data.data) {
-      allEmbeddings.push(item.embedding);
-    }
-
-    // Throttle to stay within 3 RPM free tier (21s between calls)
-    if (i + batchSize < texts.length) {
-      logger.debug('Embedding: throttling 21s for rate limit...');
-      await new Promise((r) => setTimeout(r, 21000));
+      // output.data is a Float32Array — convert to number[]
+      const embedding = Array.from(output.data as Float32Array).slice(0, EMBEDDING_DIMENSIONS);
+      allEmbeddings.push(embedding);
     }
   }
 
