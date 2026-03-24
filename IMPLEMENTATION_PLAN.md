@@ -339,13 +339,13 @@ Services: app (API), worker (BullMQ), redis
 **Goal:** Production-ready deployment with monitoring.
 
 - **Structured logging** (`src/utils/logger.ts`) — Pino, request ID correlation, token/cost tracking per agent call
-- **LLM observability** — Helicone proxy for automatic token/cost/latency tracking
+- **LLM observability** — Langfuse (open-source, free cloud tier) for automatic token/cost/latency tracing
 - **Retry logic** (`src/utils/retry.ts`) — Exponential backoff, circuit breakers for external APIs
 - **Cost control** — Max cost per analysis kill switch
 - **Dockerfile** (`docker/Dockerfile`) — Multi-stage build (compile TS → slim Node.js production image)
 - **Cloud Run config** — env vars from Secret Manager, min 0 / max 10 instances, 1Gi memory, 900s timeout
 
-**Verify:** Deploy to Cloud Run → run analysis → verify logs in Cloud Logging → verify Helicone dashboard. Simulate API failure → confirm retry/circuit breaker works.
+**Verify:** Deploy to Cloud Run → run analysis → verify logs in Cloud Logging → verify Langfuse dashboard traces. Simulate API failure → confirm retry/circuit breaker works.
 
 ---
 
@@ -392,7 +392,9 @@ EPO_CONSUMER_KEY=              # EPO Open Patent Services (free registration req
 EPO_CONSUMER_SECRET=           # EPO OPS secret
 SERPAPI_API_KEY=                # Google Patents (optional, Phase 2+)
 REDIS_URL=redis://localhost:6379  # BullMQ (Phase 8+)
-HELICONE_API_KEY=              # Observability (Phase 9+, optional)
+LANGFUSE_PUBLIC_KEY=           # Langfuse observability (Phase 9+, free tier)
+LANGFUSE_SECRET_KEY=           # Langfuse observability
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
 PORT=3000
 NODE_ENV=development
 ```

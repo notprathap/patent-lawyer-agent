@@ -22,8 +22,10 @@ const envSchema = z.object({
   // Job queue (Phase 8+)
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
-  // Observability (Phase 9+)
-  HELICONE_API_KEY: z.string().optional(),
+  // Observability — Langfuse (Phase 9+)
+  LANGFUSE_PUBLIC_KEY: z.string().optional(),
+  LANGFUSE_SECRET_KEY: z.string().optional(),
+  LANGFUSE_BASE_URL: z.string().default('https://cloud.langfuse.com'),
 
   // Application
   PORT: z.coerce.number().default(3000),

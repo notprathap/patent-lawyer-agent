@@ -373,7 +373,7 @@ Low confidence triggers a recommendation for human deep-dive on the flagged elem
 | Backend Runtime | Node.js (TypeScript) |
 | API Layer | Fastify REST API |
 | Task Queue | BullMQ (for long-running searches) |
-| Monitoring | LangSmith / Helicone (LLM observability) |
+| Monitoring | Langfuse (open-source LLM observability) |
 | Storage | PostgreSQL (structured data) + S3 (documents) |
 
 ---
