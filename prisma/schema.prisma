@@ -1,0 +1,11 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Schema will be expanded in Phase 5 (Database + Persistence).
+// This is the initial datasource configuration for Neon PostgreSQL.
