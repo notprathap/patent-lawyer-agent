@@ -20,6 +20,7 @@ export async function extractOrDraftClaims(inputText: string): Promise<Extracted
   const response = await client.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: 4096,
+    temperature: 0,
     messages: [
       {
         role: 'user',

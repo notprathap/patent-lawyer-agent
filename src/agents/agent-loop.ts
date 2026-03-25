@@ -92,6 +92,7 @@ export async function runAgentLoop(
     const response = await client.messages.create({
       model,
       max_tokens: maxTokens,
+      temperature: 0,
       system: systemPrompt,
       messages,
       ...(claudeTools ? { tools: claudeTools } : {}),

@@ -38,6 +38,7 @@ export async function generateMemo(input: MemoInput): Promise<MemoResult> {
   const response = await client.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: 8192,
+    temperature: 0,
     system: SYNTHESIS_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
   });

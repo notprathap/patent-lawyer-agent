@@ -300,6 +300,7 @@ async function reflect(session: AnalysisSession): Promise<string> {
   const response = await client.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: 1024,
+    temperature: 0,
     messages: [
       {
         role: 'user',
