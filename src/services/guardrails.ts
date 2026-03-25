@@ -61,20 +61,9 @@ export async function runGuardrails(
     downgradeReason = `${crossContamination.length} cross-jurisdiction contamination issues detected`;
   }
 
-  // Apply confidence adjustment
-  if (shouldDowngrade) {
-    for (const score of confidenceReport.jurisdictionScores) {
-      // Only downgrade, never upgrade
-      if (score.defensibility === 'Strong') {
-        score.defensibility = 'Moderate' as DefensibilityRating;
-      }
-    }
-    if (confidenceReport.assessmentConfidence === 'High') {
-      confidenceReport.assessmentConfidence = 'Medium' as AssessmentConfidence;
-    } else if (confidenceReport.assessmentConfidence === 'Medium') {
-      confidenceReport.assessmentConfidence = 'Low' as AssessmentConfidence;
-    }
-  }
+  // Note: we do NOT mutate confidenceReport here. The confidence scorer's
+  // output is the source of truth for both the memo and the dashboard.
+  // Guardrails only report issues — they don't override scores.
 
   // Append validation report to memo
   const reportSection = formatValidationReport(validationReport, warnings, errors);
