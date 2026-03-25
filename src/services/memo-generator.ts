@@ -14,7 +14,14 @@ IMPORTANT:
 - This is a DRAFT memo for attorney review, not a final legal opinion.
 - Include the disclaimer at the end.
 - Use the exact section structure provided.
-- Do NOT fabricate any references, case law, or legal citations beyond what is provided in the data.`;
+- Do NOT fabricate any references, case law, or legal citations beyond what is provided in the data.
+
+FORMATTING RULES:
+- Use proper markdown tables with headers (| Header1 | Header2 |) and separator rows (|---|---|).
+- Format all prior art references as markdown links: [Title](URL) — every reference must be clickable.
+- Use markdown headings (##, ###) for sections.
+- Use bold (**text**) for key terms and ratings.
+- Use bullet lists for enumerations.`;
 
 export interface MemoInput {
   parsedClaim: ParsedClaim;

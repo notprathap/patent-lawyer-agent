@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import { getAnalysis } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const STEPS = [
   'PENDING', 'VALIDATING', 'DECONSTRUCTING', 'SEARCHING_PRIOR_ART',
@@ -175,8 +176,44 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
       {isComplete && analysis.memo && (
         <div className="bg-white rounded-lg border p-6">
           <h2 className="text-sm font-medium text-gray-500 mb-4">DEFENSIBILITY OPINION MEMO</h2>
-          <div className="prose prose-sm max-w-none">
-            <ReactMarkdown>{analysis.memo}</ReactMarkdown>
+          <div className="prose prose-sm max-w-none prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:border prose-td:border-gray-300 prose-td:px-3 prose-td:py-2">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline"
+                  >
+                    {children}
+                  </a>
+                ),
+                table: ({ children }) => (
+                  <div className="overflow-x-auto my-4">
+                    <table className="min-w-full border-collapse border border-gray-300 text-sm">
+                      {children}
+                    </table>
+                  </div>
+                ),
+                thead: ({ children }) => (
+                  <thead className="bg-gray-50">{children}</thead>
+                ),
+                th: ({ children }) => (
+                  <th className="border border-gray-300 px-3 py-2 text-left font-medium text-gray-700">
+                    {children}
+                  </th>
+                ),
+                td: ({ children }) => (
+                  <td className="border border-gray-300 px-3 py-2 text-gray-600">
+                    {children}
+                  </td>
+                ),
+              }}
+            >
+              {analysis.memo}
+            </ReactMarkdown>
           </div>
         </div>
       )}
