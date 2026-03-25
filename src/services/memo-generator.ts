@@ -19,9 +19,12 @@ IMPORTANT:
 FORMATTING RULES:
 - Use proper markdown tables with headers (| Header1 | Header2 |) and separator rows (|---|---|).
 - Format all prior art references as markdown links: [Title](URL) — every reference must be clickable.
+- Use the short reference labels (R1, R2, R3...) provided in the data, NOT raw IDs or hashes.
+- When citing a reference inline, use the format: [R1](url) or **[R1]** — never paste raw hash IDs.
 - Use markdown headings (##, ###) for sections.
 - Use bold (**text**) for key terms and ratings.
-- Use bullet lists for enumerations.`;
+- Use bullet lists for enumerations.
+- Add horizontal rules (---) between major sections for visual separation.`;
 
 export interface MemoInput {
   parsedClaim: ParsedClaim;
@@ -92,12 +95,15 @@ function buildMemoPrompt(input: MemoInput): string {
     .flatMap((ec) => ec.references)
     .filter((ref, idx, arr) => arr.findIndex((r) => r.id === ref.id) === idx);
 
+  // Create short reference labels (R1, R2, ...) and a lookup map
+  const refLabelMap = new Map<string, string>();
+  allRefs.forEach((r, i) => refLabelMap.set(r.id, `R${i + 1}`));
+
   const refList = allRefs
     .map(
-      (r) =>
-        `- [${r.id}] "${r.title}" (${r.source}${r.publicationNumber ? `, ${r.publicationNumber}` : ''})` +
+      (r, i) =>
+        `- **[R${i + 1}]** [${r.title}](${r.url}) (${r.source}${r.publicationNumber ? `, ${r.publicationNumber}` : ''})` +
         `${r.date ? ` — ${r.date}` : ''}` +
-        `\n  URL: ${r.url}` +
         `\n  Jurisdictions: ${r.jurisdictions.join(', ')}`,
     )
     .join('\n');
@@ -105,7 +111,7 @@ function buildMemoPrompt(input: MemoInput): string {
   // Format coverage matrix
   const coverageMatrix = priorArtReport.elementCoverages
     .map((ec) => {
-      const refs = ec.references.map((r) => `[${r.id}] (${r.relevanceScore})`).join(', ');
+      const refs = ec.references.map((r) => `${refLabelMap.get(r.id) || r.id} (${r.relevanceScore})`).join(', ');
       return `| ${ec.elementId} | ${ec.coverageLevel} | ${refs || 'none'} |`;
     })
     .join('\n');

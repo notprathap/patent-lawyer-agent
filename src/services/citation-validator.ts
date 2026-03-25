@@ -216,12 +216,17 @@ async function checkFabricatedCases(
     'bilski v kappos',
   ]);
 
+  const knownCasesList = Array.from(knownCases);
+
   for (const match of caseMatches) {
     const caseName = `${match[1]} v ${match[2]}`.toLowerCase().replace(/\./g, '');
     checked++;
 
-    // Check if it's a known case
-    if (knownCases.has(caseName)) continue;
+    // Check if it's a known case (substring match — "graham v john deere factors" matches "graham v john deere")
+    const isKnown = knownCasesList.some(
+      (known) => caseName.includes(known) || known.includes(caseName),
+    );
+    if (isKnown) continue;
 
     // If RAG DB is available, check if the case exists there
     if (env.DATABASE_URL) {
