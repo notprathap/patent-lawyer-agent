@@ -113,20 +113,30 @@ function computeAssessmentConfidence(
   }
 
   // Factor 2: Prior art coverage
+  // Key insight: "no coverage after thorough search" = evidence of novelty (good for confidence)
+  // vs "no coverage because search was insufficient" = genuine gap (bad for confidence)
   const coverageLevels = priorArtReport.elementCoverages.map((ec) => ec.coverageLevel);
   const strongCoverage = coverageLevels.filter((l) => l === 'strong').length;
   const noneCoverage = coverageLevels.filter((l) => l === 'none').length;
   const total = coverageLevels.length;
+  const queriesPerElement = total > 0 ? priorArtReport.searchQueries.length / total : 0;
+  const searchWasThorough = queriesPerElement >= 1 && priorArtReport.searchQueries.length >= 3;
 
   if (noneCoverage === 0) {
     score += 3;
     factors.push('All elements have at least some prior art coverage');
+  } else if (searchWasThorough && noneCoverage > 0) {
+    // Thorough search found no prior art — this is a novelty signal, not a gap
+    score += 3;
+    factors.push(
+      `${noneCoverage}/${total} elements have no prior art after thorough search (${priorArtReport.searchQueries.length} queries) — likely novel`,
+    );
   } else if (noneCoverage <= total * 0.25) {
     score += 2;
     factors.push(`${noneCoverage}/${total} elements have no coverage`);
   } else {
     score += 1;
-    factors.push(`${noneCoverage}/${total} elements have no coverage (significant gaps)`);
+    factors.push(`${noneCoverage}/${total} elements have no coverage (search may be insufficient)`);
   }
 
   if (strongCoverage >= total * 0.5) {
