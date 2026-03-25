@@ -147,11 +147,13 @@ ${formatUKDetails(analysis)}`
 
 ## DATA
 
-### Confidence Scores
-Per-Jurisdiction Defensibility:
+### Confidence Scores (USE EXACTLY THESE — do not recompute)
+Per-Jurisdiction Defensibility (MANDATORY — use these exact ratings in the Executive Summary):
 ${jurScores}
-Assessment Confidence: ${confidenceReport.assessmentConfidence}
+Assessment Confidence (MANDATORY — use this exact level): ${confidenceReport.assessmentConfidence}
 Confidence Rationale: ${confidenceReport.confidenceRationale}
+
+IMPORTANT: The defensibility ratings and confidence level above are pre-computed by the scoring engine. You MUST use these exact values in the memo. Do NOT override them with your own assessment.
 
 ### Claim ${parsedClaim.claimNumber} (${parsedClaim.isIndependent ? 'Independent' : 'Dependent'})
 Full Text: ${parsedClaim.fullText}
