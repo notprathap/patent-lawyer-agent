@@ -140,6 +140,14 @@ export async function runAnalysis(
       },
       'Lead Counsel: prior art search complete',
     );
+
+    if (session.priorArtReport.totalReferencesFound === 0) {
+      session.issues.push(
+        'WARNING: Prior art search found zero references. This is likely due to external API rate limiting, not evidence of novelty. Results should be treated with low confidence.',
+      );
+      logger.warn({ sessionId: session.id }, 'Lead Counsel: prior art search found ZERO references — possible API failure');
+    }
+
     if (persist && analysisId) await persistPriorArtReport(analysisId, session);
 
     // Step 4: Examine patent across all jurisdictions

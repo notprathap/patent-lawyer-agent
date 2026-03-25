@@ -122,14 +122,24 @@ function computeAssessmentConfidence(
   const queriesPerElement = total > 0 ? priorArtReport.searchQueries.length / total : 0;
   const searchWasThorough = queriesPerElement >= 1 && priorArtReport.searchQueries.length >= 3;
 
-  if (noneCoverage === 0) {
+  // Check if the search found ANY references at all
+  const totalRefsFound = priorArtReport.totalReferencesFound;
+  const searchCompletelyFailed = totalRefsFound === 0 && noneCoverage === total;
+
+  if (searchCompletelyFailed) {
+    // Zero references across all elements = search failure, not novelty
+    score += 0;
+    factors.push(
+      `Prior art search found 0 references across all ${total} elements — search likely failed (API rate limits). Low confidence in results.`,
+    );
+  } else if (noneCoverage === 0) {
     score += 3;
     factors.push('All elements have at least some prior art coverage');
-  } else if (searchWasThorough && noneCoverage > 0) {
-    // Thorough search found no prior art — this is a novelty signal, not a gap
+  } else if (searchWasThorough && noneCoverage > 0 && totalRefsFound > 0) {
+    // Some elements have coverage, others don't after thorough search — novelty signal
     score += 3;
     factors.push(
-      `${noneCoverage}/${total} elements have no prior art after thorough search (${priorArtReport.searchQueries.length} queries) — likely novel`,
+      `${noneCoverage}/${total} elements have no prior art after thorough search (${priorArtReport.searchQueries.length} queries, ${totalRefsFound} refs found for other elements) — likely novel`,
     );
   } else if (noneCoverage <= total * 0.25) {
     score += 2;
