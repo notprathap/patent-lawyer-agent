@@ -43,7 +43,8 @@ export async function searchLegalKnowledge(
   let paramIndex = 4;
 
   if (jurisdiction) {
-    conditions.push(`"jurisdiction" = $${paramIndex}`);
+    // Match the specific jurisdiction OR "ALL" (technical prior art is jurisdiction-agnostic)
+    conditions.push(`("jurisdiction" = $${paramIndex} OR "jurisdiction" = 'ALL')`);
     params.push(jurisdiction);
     paramIndex++;
   }
