@@ -257,7 +257,7 @@ export async function runStructuredAgentLoop<T>(
   if (capturedOutput === null) {
     const agentMessage = result.text?.trim() || 'No explanation provided.';
     throw new Error(
-      `The agent could not process this input. Agent response: "${agentMessage.slice(0, 500)}"`,
+      `The agent could not process this input. Agent response: "${agentMessage.slice(0, 2000)}"`,
     );
   }
 

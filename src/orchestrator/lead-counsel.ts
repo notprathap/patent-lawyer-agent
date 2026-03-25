@@ -8,6 +8,7 @@ import { computeConfidenceReport, type ConfidenceReport } from '../services/conf
 import { generateMemo } from '../services/memo-generator.js';
 import { validateClaimInput } from '../services/input-validator.js';
 import { runGuardrails, type GuardrailResult } from '../services/guardrails.js';
+import { extractOrDraftClaims } from '../services/claim-extractor.js';
 import {
   createSession,
   addTokenUsage,
@@ -66,15 +67,32 @@ export async function runAnalysis(
       logger.debug({ analysisId }, 'Lead Counsel: DB record created');
     }
 
-    // Step 1: Validate input (enhanced with eligibility detection)
+    // Step 1: Extract or identify claims from input
     session.step = 'validating';
     if (persist && analysisId) await updateAnalysisStatus(analysisId, 'VALIDATING');
+    logger.info({ sessionId: session.id }, 'Lead Counsel: Step 1 — analyzing input');
+
+    const extraction = await extractOrDraftClaims(session.claimText);
+
+    if (!extraction.isAlreadyFormalClaim) {
+      logger.info(
+        {
+          sessionId: session.id,
+          draftedClaims: extraction.claims.length,
+          summary: extraction.summary.slice(0, 150),
+        },
+        'Lead Counsel: input is a technical document — drafted claims from innovations',
+      );
+      session.issues.push(`Input was a technical document, not a formal claim. Drafted ${extraction.claims.length} claim(s) from identified innovations.`);
+      session.issues.push(`Summary: ${extraction.summary}`);
+
+      // Use the first drafted claim for analysis
+      session.claimText = extraction.claims[0];
+    }
+
+    // Run eligibility detection on the claim
     const inputValidation = await validateClaimInput(session.claimText, jurisdictions);
     addTokenUsage(session, inputValidation.tokensUsed);
-
-    if (!inputValidation.isValid) {
-      throw new Error(`Input validation failed: ${inputValidation.reason}`);
-    }
 
     if (inputValidation.eligibilityWarnings.length > 0) {
       for (const warn of inputValidation.eligibilityWarnings) {
@@ -86,7 +104,7 @@ export async function runAnalysis(
       );
     }
 
-    logger.info({ sessionId: session.id, validation: inputValidation.reason.slice(0, 100) }, 'Lead Counsel: input validated');
+    logger.info({ sessionId: session.id }, 'Lead Counsel: input validated');
 
     // Step 2: Deconstruct claim
     session.step = 'deconstructing';
