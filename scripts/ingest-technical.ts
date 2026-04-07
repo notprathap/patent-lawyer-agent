@@ -26,7 +26,7 @@ interface S2Response {
 }
 
 // Technical domains to cover
-const DOMAINS = [
+const ALL_DOMAINS = [
   {
     id: 'spad_crosstalk',
     query: 'SPAD array optical crosstalk deep trench isolation single photon avalanche diode',
@@ -77,7 +77,23 @@ const DOMAINS = [
     query: 'metasurface biosensing silicon photonic wavelength filtering',
     label: 'Metasurface Biosensing',
   },
+  {
+    id: 'hydrodynamic_focusing',
+    query: 'hydrodynamic focusing inertial microfluidics Dean flow particle separation sheath flow',
+    label: 'Hydrodynamic Focusing & Inertial Microfluidics',
+  },
+  {
+    id: 'optofluidics',
+    query: 'optofluidics optical manipulation microfluidic laser waveguide light-driven flow',
+    label: 'Optofluidics',
+  },
 ];
+
+// Filter to specific domains via CLI args, or run all
+const filterIds = process.argv.slice(2);
+const DOMAINS = filterIds.length > 0
+  ? ALL_DOMAINS.filter((d) => filterIds.includes(d.id))
+  : ALL_DOMAINS;
 
 async function fetchPapers(query: string, limit: number = 8): Promise<S2Paper[]> {
   const url = new URL(S2_BASE);
@@ -86,11 +102,14 @@ async function fetchPapers(query: string, limit: number = 8): Promise<S2Paper[]>
   url.searchParams.append('limit', String(limit));
   url.searchParams.append('sort', 'citationCount:desc');
 
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (process.env.SEMANTIC_SCHOLAR_API_KEY) {
+    headers['x-api-key'] = process.env.SEMANTIC_SCHOLAR_API_KEY;
+  }
+
   // Retry with backoff for rate limiting
   for (let attempt = 0; attempt < 4; attempt++) {
-    const response = await fetch(url.toString(), {
-      headers: { Accept: 'application/json' },
-    });
+    const response = await fetch(url.toString(), { headers });
 
     if (response.status === 429) {
       const waitMs = (attempt + 1) * 3000;
