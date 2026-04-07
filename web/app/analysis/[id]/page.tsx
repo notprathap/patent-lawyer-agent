@@ -144,9 +144,11 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
           html2canvas: {
             scale: 2,
             useCORS: true,
-            onclone: (_doc: Document, clonedEl: HTMLElement) => {
+            onclone: (clonedDoc: Document, clonedEl: HTMLElement) => {
               // Tailwind CSS v4 uses oklch/lab color functions that html2canvas
-              // cannot parse. Resolve all colors to RGB via computed styles.
+              // cannot parse. Two-step fix:
+
+              // 1. Inline browser-computed RGB colors on every element
               const origEls = Array.from(element.querySelectorAll('*'));
               const cloneEls = Array.from(clonedEl.querySelectorAll('*'));
 
@@ -161,6 +163,17 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
               origEls.forEach((orig, i) => {
                 const clone = cloneEls[i] as HTMLElement | undefined;
                 if (clone?.style) applyComputed(orig, clone);
+              });
+
+              // 2. Strip oklch/lab/oklab/lch from stylesheets so html2canvas's
+              //    CSS parser never encounters them. Inline styles take precedence.
+              clonedDoc.querySelectorAll('style').forEach((styleEl) => {
+                if (styleEl.textContent) {
+                  styleEl.textContent = styleEl.textContent.replace(
+                    /(?:oklch|oklab|lab|lch)\([^)]*\)/g,
+                    'transparent',
+                  );
+                }
               });
             },
           },
