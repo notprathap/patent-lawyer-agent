@@ -11,6 +11,17 @@ import type { ToolDefinition } from '../../agents/agent-loop.js';
 
 const S2_BASE = 'https://api.semanticscholar.org/graph/v1/paper/search';
 
+// Enforce 1 req/sec rate limit (Semantic Scholar introductory tier)
+let lastRequestTime = 0;
+async function throttle() {
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < 1000) {
+    await new Promise((r) => setTimeout(r, 1000 - elapsed));
+  }
+  lastRequestTime = Date.now();
+}
+
 const inputSchema = z.object({
   query: z.string().describe('Search query for academic papers'),
   maxResults: z.number().default(10).describe('Maximum results to return (max 100)'),
@@ -70,12 +81,13 @@ async function executeSemanticScholarSearch(input: {
 
   logger.debug({ query: input.query }, 'Semantic Scholar: searching');
 
-  // Retry with backoff for rate limiting (429)
+  // Retry with exponential backoff for rate limiting (429)
   let response: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await throttle();
     response = await fetch(url.toString(), { method: 'GET', headers });
     if (response.status !== 429) break;
-    const waitMs = (attempt + 1) * 2000;
+    const waitMs = Math.min(1000 * Math.pow(2, attempt), 30000);
     logger.debug({ attempt, waitMs }, 'Semantic Scholar: rate limited, retrying');
     await new Promise((r) => setTimeout(r, waitMs));
   }

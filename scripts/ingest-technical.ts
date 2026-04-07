@@ -95,6 +95,17 @@ const DOMAINS = filterIds.length > 0
   ? ALL_DOMAINS.filter((d) => filterIds.includes(d.id))
   : ALL_DOMAINS;
 
+// Enforce 1 req/sec rate limit (Semantic Scholar introductory tier)
+let lastRequestTime = 0;
+async function throttle() {
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < 1000) {
+    await new Promise((r) => setTimeout(r, 1000 - elapsed));
+  }
+  lastRequestTime = Date.now();
+}
+
 async function fetchPapers(query: string, limit: number = 8): Promise<S2Paper[]> {
   const url = new URL(S2_BASE);
   url.searchParams.append('query', query);
@@ -107,13 +118,14 @@ async function fetchPapers(query: string, limit: number = 8): Promise<S2Paper[]>
     headers['x-api-key'] = process.env.SEMANTIC_SCHOLAR_API_KEY;
   }
 
-  // Retry with backoff for rate limiting
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // Retry with exponential backoff for rate limiting
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await throttle();
     const response = await fetch(url.toString(), { headers });
 
     if (response.status === 429) {
-      const waitMs = (attempt + 1) * 3000;
-      console.log(`    [rate limited] waiting ${waitMs / 1000}s...`);
+      const waitMs = Math.min(1000 * Math.pow(2, attempt), 30000);
+      console.log(`    [rate limited] attempt ${attempt + 1}/5, retrying in ${waitMs / 1000}s...`);
       await new Promise((r) => setTimeout(r, waitMs));
       continue;
     }
