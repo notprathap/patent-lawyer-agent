@@ -39,8 +39,10 @@ docker/.env
 scripts/cache/
 
 # Next.js
+.next/
 web/.next/
 web/node_modules/
+next-env.d.ts
 
 # Misc
 *.tsbuildinfo
