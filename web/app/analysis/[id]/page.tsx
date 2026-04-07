@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, useRef, useCallback, use } from 'react';
 import { getAnalysis } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -126,6 +126,33 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const pdfContentRef = useRef<HTMLDivElement>(null);
+
+  const handleExportPDF = useCallback(async () => {
+    if (!pdfContentRef.current || !analysis) return;
+    setExporting(true);
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const element = pdfContentRef.current;
+
+      await html2pdf()
+        .set({
+          margin: [10, 10, 10, 10],
+          filename: `patent-defensibility-${id.slice(0, 12)}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+        })
+        .from(element)
+        .save();
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [analysis, id]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -171,52 +198,81 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
 
       <StatusTracker status={analysis.status} errorMessage={analysis.reflectionNotes} />
 
-      {isComplete && <ConfidencePanel analysis={analysis} />}
-
-      {isComplete && analysis.memo && (
-        <div className="bg-white rounded-lg border p-6">
-          <h2 className="text-sm font-medium text-gray-500 mb-4">DEFENSIBILITY OPINION MEMO</h2>
-          <div className="prose prose-sm max-w-none prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:border prose-td:border-gray-300 prose-td:px-3 prose-td:py-2">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline"
-                  >
-                    {children}
-                  </a>
-                ),
-                table: ({ children }) => (
-                  <div className="overflow-x-auto my-4">
-                    <table className="min-w-full border-collapse border border-gray-300 text-sm">
-                      {children}
-                    </table>
-                  </div>
-                ),
-                thead: ({ children }) => (
-                  <thead className="bg-gray-50">{children}</thead>
-                ),
-                th: ({ children }) => (
-                  <th className="border border-gray-300 px-3 py-2 text-left font-medium text-gray-700">
-                    {children}
-                  </th>
-                ),
-                td: ({ children }) => (
-                  <td className="border border-gray-300 px-3 py-2 text-gray-600">
-                    {children}
-                  </td>
-                ),
-              }}
-            >
-              {analysis.memo}
-            </ReactMarkdown>
-          </div>
+      {isComplete && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={handleExportPDF}
+            disabled={exporting || !analysis.memo}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {exporting ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export PDF
+              </>
+            )}
+          </button>
         </div>
       )}
+
+      <div ref={pdfContentRef}>
+        {isComplete && <ConfidencePanel analysis={analysis} />}
+
+        {isComplete && analysis.memo && (
+          <div className="bg-white rounded-lg border p-6">
+            <h2 className="text-sm font-medium text-gray-500 mb-4">DEFENSIBILITY OPINION MEMO</h2>
+            <div className="prose prose-sm max-w-none prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:border prose-td:border-gray-300 prose-td:px-3 prose-td:py-2">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ href, children }) => (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 underline"
+                    >
+                      {children}
+                    </a>
+                  ),
+                  table: ({ children }) => (
+                    <div className="overflow-x-auto my-4">
+                      <table className="min-w-full border-collapse border border-gray-300 text-sm">
+                        {children}
+                      </table>
+                    </div>
+                  ),
+                  thead: ({ children }) => (
+                    <thead className="bg-gray-50">{children}</thead>
+                  ),
+                  th: ({ children }) => (
+                    <th className="border border-gray-300 px-3 py-2 text-left font-medium text-gray-700">
+                      {children}
+                    </th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="border border-gray-300 px-3 py-2 text-gray-600">
+                      {children}
+                    </td>
+                  ),
+                }}
+              >
+                {analysis.memo}
+              </ReactMarkdown>
+            </div>
+          </div>
+        )}
+      </div>
 
       {!isComplete && analysis.status !== 'FAILED' && (
         <div className="bg-white rounded-lg border p-12 text-center">
