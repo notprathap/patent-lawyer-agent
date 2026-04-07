@@ -141,7 +141,29 @@ export default function AnalysisDetail({ params }: { params: Promise<{ id: strin
           margin: [10, 10, 10, 10],
           filename: `patent-defensibility-${id.slice(0, 12)}.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            onclone: (_doc: Document, clonedEl: HTMLElement) => {
+              // Tailwind CSS v4 uses oklch/lab color functions that html2canvas
+              // cannot parse. Resolve all colors to RGB via computed styles.
+              const origEls = Array.from(element.querySelectorAll('*'));
+              const cloneEls = Array.from(clonedEl.querySelectorAll('*'));
+
+              const applyComputed = (orig: Element, clone: HTMLElement) => {
+                const s = window.getComputedStyle(orig);
+                clone.style.color = s.color;
+                clone.style.backgroundColor = s.backgroundColor;
+                clone.style.borderColor = s.borderColor;
+              };
+
+              applyComputed(element, clonedEl);
+              origEls.forEach((orig, i) => {
+                const clone = cloneEls[i] as HTMLElement | undefined;
+                if (clone?.style) applyComputed(orig, clone);
+              });
+            },
+          },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
         })
