@@ -1,4 +1,4 @@
-import { getPrismaClient } from '../db/client.js';
+import { getBackgroundPrismaClient } from '../db/client.js';
 import { embedText, EMBEDDING_DIMENSIONS } from './embedding.js';
 import { logger } from '../utils/logger.js';
 import type { Jurisdiction } from '../types/index.js';
@@ -57,7 +57,7 @@ export async function searchLegalKnowledge(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
 
   const results = await prisma.$queryRawUnsafe<RAGResult[]>(
     `SELECT
@@ -91,7 +91,7 @@ export async function searchLegalKnowledge(
  * Check if the legal knowledge base has been populated.
  */
 export async function isKnowledgeBasePopulated(): Promise<boolean> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
   const count = await prisma.legalDocument.count();
   return count > 0;
 }

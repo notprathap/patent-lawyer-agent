@@ -1,5 +1,5 @@
 import type { AnalysisStatus } from '@prisma/client';
-import { getPrismaClient } from '../client.js';
+import { getPrismaClient, getBackgroundPrismaClient } from '../client.js';
 import { logger } from '../../utils/logger.js';
 import type { AnalysisSession } from '../../orchestrator/session.js';
 import type { ConfidenceReport } from '../../services/confidence-scorer.js';
@@ -8,7 +8,7 @@ import type { ConfidenceReport } from '../../services/confidence-scorer.js';
  * Create a new analysis record from session data.
  */
 export async function createAnalysis(session: AnalysisSession): Promise<string> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
 
   const analysis = await prisma.analysis.create({
     data: {
@@ -53,7 +53,7 @@ export async function persistFailure(
   analysisId: string,
   errorMessage: string,
 ): Promise<void> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
   await prisma.analysis.update({
     where: { id: analysisId },
     data: {
@@ -70,7 +70,7 @@ export async function updateAnalysisStatus(
   analysisId: string,
   status: AnalysisStatus,
 ): Promise<void> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
   await prisma.analysis.update({
     where: { id: analysisId },
     data: { status },
@@ -84,7 +84,7 @@ export async function persistClaimElements(
   analysisId: string,
   session: AnalysisSession,
 ): Promise<void> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
   const claim = session.parsedClaim;
   if (!claim) return;
 
@@ -114,7 +114,7 @@ export async function persistPriorArtReport(
   analysisId: string,
   session: AnalysisSession,
 ): Promise<void> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
   const report = session.priorArtReport;
   if (!report) return;
 
@@ -185,7 +185,7 @@ export async function persistExaminerAnalysis(
   analysisId: string,
   session: AnalysisSession,
 ): Promise<void> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
   const analysis = session.examinerAnalysis;
   if (!analysis) return;
 
@@ -286,7 +286,7 @@ export async function persistFinalResults(
   session: AnalysisSession,
   confidenceReport: ConfidenceReport,
 ): Promise<void> {
-  const prisma = getPrismaClient();
+  const prisma = getBackgroundPrismaClient();
 
   const usScore = confidenceReport.jurisdictionScores.find((s) => s.jurisdiction === 'US');
   const epoScore = confidenceReport.jurisdictionScores.find((s) => s.jurisdiction === 'EU');

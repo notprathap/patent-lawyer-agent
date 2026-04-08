@@ -44,5 +44,8 @@ web/.next/
 web/node_modules/
 next-env.d.ts
 
+# Playwright MCP artifacts
+.playwright-mcp/
+
 # Misc
 *.tsbuildinfo

@@ -28,11 +28,24 @@ export function registerAnalysisRoutes(app: FastifyInstance) {
       const fileName = data.filename?.toLowerCase() || '';
 
       if (fileName.endsWith('.pdf')) {
-        // Extract text from PDF
+        // pdfjs-dist worker is pre-loaded at server startup (see server.ts)
         const { PDFParse } = await import('pdf-parse');
         const pdf = new PDFParse({ data: new Uint8Array(buffer) });
-        const textResult = await pdf.getText();
-        claimText = textResult.text || '';
+        try {
+          const textResult = await Promise.race([
+            pdf.getText(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('PDF text extraction timed out after 120 seconds')), 120_000),
+            ),
+          ]);
+          claimText = textResult.text || '';
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.error({ fileName, fileSize: buffer.length, error: message }, 'PDF parsing failed');
+          return reply.status(422).send({ error: `Failed to extract text from PDF: ${message}` });
+        } finally {
+          await pdf.destroy().catch(() => {});
+        }
       } else {
         // Read as UTF-8 text (.txt, .docx text content, etc.)
         claimText = buffer.toString('utf-8');
