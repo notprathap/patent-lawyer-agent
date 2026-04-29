@@ -2,7 +2,9 @@ import type { AnalysisStatus } from '@prisma/client';
 import { getPrismaClient, getBackgroundPrismaClient } from '../client.js';
 import { logger } from '../../utils/logger.js';
 import type { AnalysisSession } from '../../orchestrator/session.js';
+import type { FTOSession } from '../../orchestrator/session-fto.js';
 import type { ConfidenceReport } from '../../services/confidence-scorer.js';
+import type { FTOConfidenceReport, PatentToCheckInput } from '../../types/fto.js';
 
 /**
  * Create a new analysis record from session data.
@@ -24,7 +26,7 @@ export async function createAnalysis(session: AnalysisSession): Promise<string> 
 }
 
 /**
- * Create a new analysis record directly from parameters (used by API route).
+ * Create a new defensibility analysis record directly from parameters (used by API route).
  */
 export async function createAnalysisRecord(
   claimText: string,
@@ -35,6 +37,7 @@ export async function createAnalysisRecord(
 
   const analysis = await prisma.analysis.create({
     data: {
+      analysisType: 'DEFENSIBILITY',
       claimText,
       technicalSpec: technicalSpec || null,
       jurisdictions,
@@ -43,6 +46,44 @@ export async function createAnalysisRecord(
   });
 
   logger.debug({ analysisId: analysis.id }, 'DB: analysis record created');
+  return analysis.id;
+}
+
+/**
+ * Create a new FTO analysis record directly from parameters (used by API route).
+ * Stores the product description in the existing `claimText` column for back-compat
+ * with code paths that read `claimText` (and also in `productDescription`).
+ */
+export async function createFTOAnalysisRecord(
+  productDescription: string,
+  targetMarkets: string[],
+  patentsToCheck: PatentToCheckInput[],
+): Promise<string> {
+  const prisma = getPrismaClient();
+
+  const analysis = await prisma.analysis.create({
+    data: {
+      analysisType: 'FTO',
+      claimText: productDescription, // back-compat: keeps existing code happy
+      productDescription,
+      targetMarkets,
+      jurisdictions: targetMarkets, // mirror so list/detail UIs that read jurisdictions work
+      status: 'PENDING',
+    },
+  });
+
+  if (patentsToCheck.length > 0) {
+    await prisma.patentToCheck.createMany({
+      data: patentsToCheck.map((p, idx) => ({
+        analysisId: analysis.id,
+        publicationNumber: p.publicationNumber,
+        notes: p.notes ?? null,
+        position: idx,
+      })),
+    });
+  }
+
+  logger.debug({ analysisId: analysis.id }, 'DB: FTO analysis record created');
   return analysis.id;
 }
 
@@ -313,7 +354,7 @@ export async function persistFinalResults(
 }
 
 /**
- * Load an analysis by ID.
+ * Load an analysis by ID. Includes both defensibility and FTO relations.
  */
 export async function getAnalysis(analysisId: string) {
   const prisma = getPrismaClient();
@@ -324,6 +365,7 @@ export async function getAnalysis(analysisId: string) {
       priorArtReferences: true,
       invalidityArguments: true,
       searchQueries: { orderBy: { executedAt: 'asc' } },
+      patentsToCheck: { orderBy: { position: 'asc' } },
     },
   });
 }
@@ -339,16 +381,120 @@ export async function listAnalyses(limit = 20, offset = 0) {
     skip: offset,
     select: {
       id: true,
+      analysisType: true,
       status: true,
       jurisdictions: true,
+      targetMarkets: true,
       usRating: true,
       epoRating: true,
       ukRating: true,
+      overallFtoRisk: true,
       assessmentConfidence: true,
       createdAt: true,
       completedAt: true,
     },
   });
+}
+
+// ===========================================================================
+// FTO persistence helpers
+// ===========================================================================
+
+export async function persistFTOParsedProduct(
+  analysisId: string,
+  session: FTOSession,
+): Promise<void> {
+  const prisma = getBackgroundPrismaClient();
+  const product = session.parsedProduct;
+  if (!product) return;
+  await prisma.analysis.update({
+    where: { id: analysisId },
+    data: { parsedProduct: product as object },
+  });
+  logger.debug(
+    { analysisId, features: product.features.length },
+    'DB: FTO parsed product persisted',
+  );
+}
+
+export async function persistFTODiscoveredPatents(
+  analysisId: string,
+  session: FTOSession,
+): Promise<void> {
+  const prisma = getBackgroundPrismaClient();
+  const report = session.discoveredPatents;
+  if (!report) return;
+  await prisma.analysis.update({
+    where: { id: analysisId },
+    data: { discoveredPatents: report as object },
+  });
+
+  // Persist search queries to the existing SearchQuery table for visibility.
+  if (report.searchQueries.length > 0) {
+    await prisma.searchQuery.createMany({
+      data: report.searchQueries.map((q) => ({
+        analysisId,
+        query: q,
+        source: 'fto-mixed',
+        resultCount: 0,
+      })),
+    });
+  }
+
+  logger.debug(
+    { analysisId, patents: report.patents.length },
+    'DB: FTO discovered patents persisted',
+  );
+}
+
+export async function persistFTOInfringementReport(
+  analysisId: string,
+  session: FTOSession,
+): Promise<void> {
+  const prisma = getBackgroundPrismaClient();
+  const report = session.infringementReport;
+  if (!report) return;
+  await prisma.analysis.update({
+    where: { id: analysisId },
+    data: { infringementReport: report as object },
+  });
+  logger.debug(
+    { analysisId, perPatent: report.perPatentAnalyses.length },
+    'DB: FTO infringement report persisted',
+  );
+}
+
+export async function persistFTOFinalResults(
+  analysisId: string,
+  session: FTOSession,
+  confidenceReport: FTOConfidenceReport,
+): Promise<void> {
+  const prisma = getBackgroundPrismaClient();
+
+  const usScore = confidenceReport.marketScores.find((s) => s.market === 'US');
+  const epoScore = confidenceReport.marketScores.find((s) => s.market === 'EU');
+  const ukScore = confidenceReport.marketScores.find((s) => s.market === 'UK');
+
+  await prisma.analysis.update({
+    where: { id: analysisId },
+    data: {
+      status: 'COMPLETE',
+      memo: session.memo,
+      confidenceReport: confidenceReport as object,
+      reflectionNotes: session.reflectionNotes,
+      // FTO uses the same per-jurisdiction rating columns; values are RiskLevel.
+      usRating: usScore?.risk,
+      epoRating: epoScore?.risk,
+      ukRating: ukScore?.risk,
+      overallFtoRisk: confidenceReport.overallRisk,
+      assessmentConfidence: confidenceReport.assessmentConfidence,
+      totalInputTokens: session.totalTokensUsed.input,
+      totalOutputTokens: session.totalTokensUsed.output,
+      completedAt: new Date(),
+    },
+  });
+
+  logger.debug({ analysisId }, 'DB: FTO final results persisted');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,18 +1,10 @@
 import path from 'node:path';
 import { defineConfig } from 'prisma/config';
+import { config as loadDotenv } from 'dotenv';
 
-// Read DATABASE_URL from environment — Prisma CLI should have .env loaded
-// If not, set DATABASE_URL before running prisma commands
-const url = process.env.DATABASE_URL;
-
-if (!url) {
-  // Try loading dotenv manually as fallback
-  try {
-    const dotenv = require('dotenv');
-    dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
-  } catch {
-    // dotenv not available in this context
-  }
+// Load .env up-front so DATABASE_URL is populated before defineConfig reads it.
+if (!process.env.DATABASE_URL) {
+  loadDotenv({ path: path.resolve(__dirname, '..', '.env') });
 }
 
 export default defineConfig({

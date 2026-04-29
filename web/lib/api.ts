@@ -26,7 +26,19 @@ export async function startAnalysis(data: {
   return apiFetch('/api/v1/analyses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ ...data, analysisType: 'DEFENSIBILITY' }),
+  });
+}
+
+export async function startFTOAnalysis(data: {
+  productDescription: string;
+  targetMarkets: string[];
+  patentsToCheck?: Array<{ publicationNumber: string; notes?: string }>;
+}) {
+  return apiFetch('/api/v1/analyses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, analysisType: 'FTO' }),
   });
 }
 
@@ -38,10 +50,27 @@ export async function listAnalyses(limit = 20, offset = 0) {
   return apiFetch(`/api/v1/analyses?limit=${limit}&offset=${offset}`);
 }
 
-export async function uploadFileAndAnalyze(file: File, jurisdictions: string[]) {
+export async function uploadFileAndAnalyze(
+  file: File,
+  jurisdictions: string[],
+  options?: {
+    analysisType?: 'DEFENSIBILITY' | 'FTO';
+    targetMarkets?: string[];
+    patentsToCheck?: string;
+  },
+) {
+  // IMPORTANT: append non-file fields BEFORE the file. Fastify's @fastify/multipart
+  // only exposes fields that arrived in the stream before the file part on
+  // `data.fields`; anything appended after the file is invisible to the route.
   const formData = new FormData();
+  formData.append('analysisType', options?.analysisType ?? 'DEFENSIBILITY');
+  if (options?.analysisType === 'FTO') {
+    formData.append('targetMarkets', (options?.targetMarkets ?? jurisdictions).join(','));
+    if (options?.patentsToCheck) formData.append('patentsToCheck', options.patentsToCheck);
+  } else {
+    formData.append('jurisdictions', jurisdictions.join(','));
+  }
   formData.append('file', file);
-  formData.append('jurisdictions', jurisdictions.join(','));
 
   return apiFetch('/api/v1/analyses', {
     method: 'POST',

@@ -57,10 +57,4 @@ export function createSession(
   };
 }
 
-export function addTokenUsage(
-  session: AnalysisSession,
-  tokens: { input: number; output: number },
-): void {
-  session.totalTokensUsed.input += tokens.input;
-  session.totalTokensUsed.output += tokens.output;
-}
+export { addTokenUsage } from './token-usage.js';

@@ -9,30 +9,46 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Analysis — top-level record for a patent defensibility analysis
+// Analysis — top-level record for a patent analysis (defensibility OR FTO)
 // ---------------------------------------------------------------------------
 model Analysis {
   id                  String               @id @default(cuid())
+  analysisType        AnalysisType         @default(DEFENSIBILITY)
   status              AnalysisStatus       @default(PENDING)
+
+  // Defensibility inputs
   claimText           String
   technicalSpec       String?
   jurisdictions       String[]             // ["US", "EU", "UK"]
 
+  // FTO inputs (nullable — only set for FTO analyses)
+  productDescription  String?
+  targetMarkets       String[]             @default([])
+
   // Intermediate results (stored as JSON for flexibility)
+  // Defensibility:
   parsedClaim         Json?
   priorArtReport      Json?
   examinerAnalysis    Json?
+  // FTO:
+  parsedProduct       Json?
+  discoveredPatents   Json?
+  infringementReport  Json?
+
   reflectionNotes     String?
 
   // Final output
   memo                String?
   confidenceReport    Json?
 
-  // Defensibility ratings per jurisdiction
-  usRating            String?              // "Strong" | "Moderate" | "Weak"
+  // Per-jurisdiction ratings
+  // Defensibility: "Strong" | "Moderate" | "Weak"
+  // FTO:           "Clear" | "Low" | "Medium" | "High"
+  usRating            String?
   epoRating           String?
   ukRating            String?
   assessmentConfidence String?             // "High" | "Medium" | "Low"
+  overallFtoRisk      String?              // FTO only: "Clear" | "Low" | "Medium" | "High"
 
   // Token usage tracking
   totalInputTokens    Int                  @default(0)
@@ -49,9 +65,16 @@ model Analysis {
   elementReferences   ElementReference[]
   invalidityArguments InvalidityArgument[]
   searchQueries       SearchQuery[]
+  patentsToCheck      PatentToCheck[]
 
   @@index([status])
+  @@index([analysisType])
   @@index([createdAt])
+}
+
+enum AnalysisType {
+  DEFENSIBILITY
+  FTO
 }
 
 enum AnalysisStatus {
@@ -64,6 +87,27 @@ enum AnalysisStatus {
   SYNTHESIZING
   COMPLETE
   FAILED
+  // FTO-specific steps
+  DECONSTRUCTING_PRODUCT
+  DISCOVERING_PATENTS
+  MAPPING_PATENTS
+  ANALYZING_INFRINGEMENT
+}
+
+// ---------------------------------------------------------------------------
+// PatentToCheck — user-supplied list of patent publication numbers to evaluate
+// (FTO-only; populated when the user provides specific patents to clear against)
+// ---------------------------------------------------------------------------
+model PatentToCheck {
+  id                String   @id @default(cuid())
+  analysisId        String
+  publicationNumber String
+  notes             String?
+  position          Int      @default(0)
+
+  analysis          Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
 }
 
 // ---------------------------------------------------------------------------

@@ -128,13 +128,105 @@ This test is applied differently from the EPO's approach to Article 52(2)/(3), l
 };
 
 // ---------------------------------------------------------------------------
+// FTO / Infringement Standards (per jurisdiction)
+// ---------------------------------------------------------------------------
+
+const FTO_US_STANDARDS: Record<string, string> = {
+  'US_Literal_Infringement': `US Literal Infringement
+A patent claim is literally infringed when an accused product or process embodies EVERY element of the claim, exactly as recited. Under the "all-elements rule," even a single missing element defeats literal infringement. Each element of the claim is mapped against the accused device on a one-to-one basis.
+
+Determining literal infringement is a two-step process:
+1. Claim construction (a question of law, decided by the court — Markman v. Westview Instruments, 517 U.S. 370 (1996)).
+2. Comparison of the construed claim to the accused device (a question of fact).`,
+
+  'US_Doctrine_of_Equivalents': `US Doctrine of Equivalents (DOE)
+Even when an accused device does not literally infringe, infringement may still be found under the doctrine of equivalents if every element of the claim is met either literally or equivalently.
+
+Tests for equivalence:
+- Function-Way-Result Test (Graver Tank & Mfg. Co. v. Linde Air Products, 339 U.S. 605 (1950)): Does the accused element perform substantially the same function in substantially the same way to obtain substantially the same result?
+- Insubstantial Differences Test: Are the differences between the claimed and accused element insubstantial?
+
+The DOE is applied element-by-element (Warner-Jenkinson Co. v. Hilton Davis Chemical Co., 520 U.S. 17 (1997)), not to the claim as a whole.`,
+
+  'US_Festo_PHE': `Festo / Prosecution History Estoppel
+Festo Corp. v. Shoketsu Kinzoku Kogyo Kabushiki Co., 535 U.S. 722 (2002).
+
+When a patent applicant narrows a claim during prosecution to satisfy patentability requirements (e.g., to overcome a § 102 or § 103 rejection), the applicant is presumed to have surrendered all equivalents within the territory between the original and amended claim. Prosecution history estoppel BARS recapturing that surrendered subject matter via the doctrine of equivalents.
+
+Three rebuttal theories (where the patentee may overcome the presumption):
+1. The equivalent was unforeseeable at the time of the amendment.
+2. The rationale for the amendment bore no more than a tangential relation to the equivalent.
+3. Some other reason suggests the patentee could not reasonably be expected to have described the equivalent.
+
+For FTO: where prosecution history shows narrowing amendments, the DOE scope is limited and literal-only infringement analysis often suffices.`,
+
+  'US_All_Elements_Rule': `All-Elements Rule (US)
+Pennwalt Corp. v. Durand-Wayland, 833 F.2d 931 (Fed. Cir. 1987) (en banc).
+
+For infringement (literal OR by equivalents), every element of the claim must be present in the accused device. The doctrine of equivalents is applied element-by-element, not claim-as-a-whole. Missing even one element — and lacking an equivalent for it — defeats infringement entirely.`,
+};
+
+const FTO_EU_STANDARDS: Record<string, string> = {
+  'EPC_Art_69': `EPC Article 69 — Extent of Protection
+(1) The extent of the protection conferred by a European patent or a European patent application shall be determined by the claims. Nevertheless, the description and drawings shall be used to interpret the claims.
+(2) For the period up to grant, the extent of the protection conferred by the European patent application is determined by the claims contained in the application as published.
+
+NOTE: EPC governs patent grant. Infringement is judged by national courts (DE, FR, NL, IT, etc., and now the Unified Patent Court for unitary patents) applying their own procedural law to the substantive claim-scope rule of Art. 69 + the Protocol below.`,
+
+  'EPC_Art_69_Protocol': `Protocol on the Interpretation of Article 69 EPC
+Article 1 — General principles:
+The claims should not be interpreted in a strictly literal sense (using only the language as a guide), nor as merely a guideline (where the protection extends to anything the patentee may have contemplated). The proper interpretation lies between these extremes, and combines fair protection for the patent proprietor with a reasonable degree of legal certainty for third parties.
+
+Article 2 — Equivalents:
+For the purpose of determining the extent of protection, due account shall be taken of any element which is equivalent to an element specified in the claims.
+
+Most national courts apply a multi-step equivalence test (e.g., Germany's Schneidmesser questions, the UK's Actavis questions). The Unified Patent Court applies a similar purposive approach.`,
+
+  'UPC_Note': `Unified Patent Court (UPC)
+Since 1 June 2023, the UPC has jurisdiction over Unitary Patents and (subject to opt-out) classical European patents in participating member states. Infringement decisions across the participating member states are issued by a single court, applying Art. 69 EPC + the Protocol with reference to national doctrine. UK is NOT a UPC participant.
+
+For FTO across multiple EU national markets, treat the UPC as a unifier for opt-in patents and otherwise consider per-country infringement law (DE, FR, IT, NL most often).`,
+};
+
+const FTO_UK_STANDARDS: Record<string, string> = {
+  'UK_Patents_Act_S60': `UK Patents Act 1977, Section 60 — Infringement
+A person infringes a patent for an invention only if, while the patent is in force, he does any of the following in the United Kingdom in relation to the invention without the consent of the proprietor:
+(a) where the invention is a product, makes, disposes of, offers to dispose of, uses or imports the product or keeps it whether for disposal or otherwise;
+(b) where the invention is a process, uses the process or offers it for use in the United Kingdom when he knows, or it is obvious to a reasonable person, that its use without consent would be an infringement;
+(c) where the invention is a process, disposes of, offers to dispose of, uses or imports any product obtained directly by means of that process or keeps any such product whether for disposal or otherwise.
+
+Section 60 also defines indirect infringement (s.60(2)), which can capture supply of "essential means" relating to the invention.`,
+
+  'UK_Patents_Act_S125': `UK Patents Act 1977, Section 125 — Extent of Invention
+(1) For the purposes of this Act an invention for a patent for which an application has been made or for which a patent has been granted shall, unless the context otherwise requires, be taken to be that specified in a claim of the specification of the application or patent, as the case may be, as interpreted by the description and any drawings contained in that specification.
+(3) The Protocol on the Interpretation of Article 69 of the European Patent Convention (which Article contains a provision corresponding to subsection (1) above) shall, as for the time being in force, apply for the purposes of subsection (1) above as it applies for the purposes of that Article.
+
+This adopts EPC Art. 69 + the Protocol into UK law.`,
+
+  'UK_Actavis_Equivalents': `Actavis v Eli Lilly — UK Doctrine of Equivalents
+Actavis UK Ltd v Eli Lilly & Co [2017] UKSC 48.
+
+Restated UK approach to claim construction; introduced an explicit doctrine of equivalents into UK patent law via three reformulated questions ("the Actavis questions"):
+1. Notwithstanding that the variant is not within the literal meaning of the claim, does the variant achieve substantially the same result in substantially the same way as the invention?
+2. Would it be obvious to the person skilled in the art, reading the patent at the priority date but knowing the variant achieves substantially the same result, that it does so in substantially the same way as the invention?
+3. Would such a person have concluded that the patentee nonetheless intended that strict compliance with the literal meaning of the claim was an essential requirement of the invention?
+
+If the answers are yes, yes, no — the variant infringes by equivalence.
+
+The court also clarified that prosecution history is generally not relevant to construction unless (a) the issue is truly unclear from the patent itself, or (b) it would be contrary to public interest for the contents of the file to be ignored.`,
+
+  'UK_Indirect_Infringement': `UK Indirect Infringement (s.60(2))
+A person also infringes a patent for an invention if, while the patent is in force and without the consent of the proprietor, he supplies or offers to supply in the United Kingdom a person other than a licensee or other person entitled to work the invention with any of the means, relating to an essential element of the invention, for putting the invention into effect when he knows, or it is obvious to a reasonable person in the circumstances, that those means are suitable for putting, and are intended to put, the invention into effect in the United Kingdom.`,
+};
+
+// ---------------------------------------------------------------------------
 // Lookup Function (used as a tool by the Patent Examiner agent)
 // ---------------------------------------------------------------------------
 
 const ALL_STANDARDS: Record<string, Record<string, string>> = {
-  US: US_STANDARDS,
-  EU: EU_STANDARDS,
-  UK: UK_STANDARDS,
+  US: { ...US_STANDARDS, ...FTO_US_STANDARDS },
+  EU: { ...EU_STANDARDS, ...FTO_EU_STANDARDS },
+  UK: { ...UK_STANDARDS, ...FTO_UK_STANDARDS },
 };
 
 export interface LegalStandardResult {
@@ -217,5 +309,33 @@ export function getEligibilityTest(jurisdiction: Jurisdiction): string {
       return EU_STANDARDS['EPC_Art_52'];
     case 'UK':
       return UK_STANDARDS['UK_PA_1977_S1'] + '\n\n' + UK_STANDARDS['UK_Aerotel_Macrossan'];
+  }
+}
+
+/**
+ * Get the infringement-claim-scope test for a specific jurisdiction (used in FTO).
+ */
+export function getInfringementTest(jurisdiction: Jurisdiction): string {
+  switch (jurisdiction) {
+    case 'US':
+      return [
+        FTO_US_STANDARDS['US_Literal_Infringement'],
+        FTO_US_STANDARDS['US_Doctrine_of_Equivalents'],
+        FTO_US_STANDARDS['US_Festo_PHE'],
+        FTO_US_STANDARDS['US_All_Elements_Rule'],
+      ].join('\n\n');
+    case 'EU':
+      return [
+        FTO_EU_STANDARDS['EPC_Art_69'],
+        FTO_EU_STANDARDS['EPC_Art_69_Protocol'],
+        FTO_EU_STANDARDS['UPC_Note'],
+      ].join('\n\n');
+    case 'UK':
+      return [
+        FTO_UK_STANDARDS['UK_Patents_Act_S60'],
+        FTO_UK_STANDARDS['UK_Patents_Act_S125'],
+        FTO_UK_STANDARDS['UK_Actavis_Equivalents'],
+        FTO_UK_STANDARDS['UK_Indirect_Infringement'],
+      ].join('\n\n');
   }
 }
